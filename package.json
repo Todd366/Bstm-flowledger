@@ -1,1 +1,15 @@
-{\n  "name": "bstm-flowledger",\n  "version": "1.0.0",\n  "private": true,\n  "description": "Flowledger demo application",\n  "author": "Todd366",\n  "license": "MIT",\n  "repository": {\n    "type": "git",\n    "url": "git+https://github.com/Todd366/Bstm-flowledger.git"\n  },\n  "bugs": {\n    "url": "https://github.com/Todd366/Bstm-flowledger/issues"\n  },\n  "homepage": "https://github.com/Todd366/Bstm-flowledger#readme",\n  "dependencies": {\n    "react": "^18.2.0",\n    "react-dom": "^18.2.0",\n    "react-scripts": "5.0.1",\n    "lucide-react": "^0.292.0"\n  },\n  "scripts": {\n    "start": "react-scripts start",\n    "build": "react-scripts build",\n    "test": "react-scripts test",\n    "lint": "eslint \"src/**/*.{js,jsx,ts,tsx}\"",\n    "format": "prettier --write ."\n  },\n  "engines": {\n    "node": ">=16"\n  },\n  "eslintConfig": {\n    "extends": ["react-app", "react-app/jest"]\n  },\n  "browserslist": {\n    "production": [">0.2%", "not dead", "not op_mini all"],\n    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]\n  }\n}
+{
+  "name": "bstm-flowledger",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "lucide-react": "^0.292.0"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build"
+  }
+}
