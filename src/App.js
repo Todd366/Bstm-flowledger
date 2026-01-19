@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Package, Truck, CheckCircle, AlertTriangle, LogOut, Download, Shield, ChevronRight, DollarSign, Map, TrendingUp, Bell, Eye, Github } from 'lucide-react';
+import CameraComponent from './components/Camera';
+import AdvancedDashboard from './components/AdvancedDashboard';
+import { NotificationBell, NotificationPanel, NotificationToast, useNotifications } from './components/NotificationSystem';
+import { useOfflineSync } from './utils/OfflineSync';
+import { generateTimelinePDF } from './utils/PDFExport';
 
 const useStorage = () => {
   const [data, setData] = useState({
