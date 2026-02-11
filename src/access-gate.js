@@ -1,13 +1,7 @@
 // ======================================================================
 // src/access-gate.js
-// FLOWLEDGER ACCESS CONTROL GATE — FIXED VERSION (2025)
-// 
-// Changes:
-// - Defined missing 'approvedEmails'
-// - Fixed broken template strings in list displays
-// - Corrected l.time → l.timestamp in logs
-// - Added optional chaining (?.) to prompts to prevent null errors
-// - Minor cleanup for reliability
+// FLOWLEDGER ACCESS CONTROL GATE — FINAL FIXED VERSION
+// Last modification — no more changes after this
 // ======================================================================
 
 console.log('[AccessGate] Loading FlowLedger Iron Gate v1.0 – owner: bstm366@gmail.com');
@@ -21,7 +15,7 @@ const ADMIN_EMAILS = [
   // add trusted helpers here if needed
 ];
 
-const APPROVED_EMAILS = ADMIN_EMAILS; // missing variable that caused crash
+const APPROVED_EMAILS = ADMIN_EMAILS; // fixes undefined crash
 
 const SECRET_MASTER_KEY = 'flowledger-omega-2026-myrah-78355551';   // CHANGE THIS EVERY SALE
 
@@ -122,10 +116,23 @@ FlowLedger Access Gate
 2 = Approve / Revoke (admin only)
 
 Enter 1 or 2:
-  `)?.trim();
+  `);
 
-  if (choice === '1') {
-    const email = prompt('Enter your email address:')?.trim().toLowerCase();
+  if (choice === null) {
+    location.reload();
+    return false;
+  }
+
+  const trimmedChoice = choice.trim();
+
+  if (trimmedChoice === '1') {
+    const emailInput = prompt('Enter your email address:');
+    if (emailInput === null) {
+      location.reload();
+      return false;
+    }
+
+    const email = emailInput.trim().toLowerCase();
     if (!email || !email.includes('@')) {
       alert('Valid email required.');
       location.reload();
@@ -145,15 +152,27 @@ Enter 1 or 2:
     return false;
   }
 
-  if (choice === '2') {
-    const adminEmail = prompt('Admin email:')?.trim().toLowerCase();
+  if (trimmedChoice === '2') {
+    const adminInput = prompt('Admin email:');
+    if (adminInput === null) {
+      location.reload();
+      return false;
+    }
+
+    const adminEmail = adminInput.trim().toLowerCase();
     if (!isAdmin(adminEmail)) {
       alert('Not an admin account.');
       location.reload();
       return false;
     }
 
-    const key = prompt('Enter master key:');
+    const keyInput = prompt('Enter master key:');
+    if (keyInput === null) {
+      location.reload();
+      return false;
+    }
+
+    const key = keyInput;
     if (key !== SECRET_MASTER_KEY) {
       alert(WRONG_KEY_MESSAGE);
       logEvent('admin_wrong_key', { attemptedEmail: adminEmail });
@@ -161,7 +180,7 @@ Enter 1 or 2:
       return false;
     }
 
-    const action = prompt(`
+    const actionInput = prompt(`
 Admin Panel – ${adminEmail}
 
 1 = Approve pending request
@@ -170,7 +189,14 @@ Admin Panel – ${adminEmail}
 4 = View logs
 
 Enter number:
-    `)?.trim();
+    `);
+
+    if (actionInput === null) {
+      location.reload();
+      return false;
+    }
+
+    const action = actionInput.trim();
 
     if (action === '1') {
       const pending = getPendingRequests();
@@ -178,8 +204,13 @@ Enter number:
         alert('No pending requests.');
       } else {
         const list = pending.map((p, i) => `${i+1}. \( {p.email} ( \){new Date(p.requestedAt).toLocaleString()})`).join('\n');
-        const num = prompt(`Pending requests:\n${list}\n\nEnter number to approve:`);
-        const index = parseInt(num) - 1;
+        const numInput = prompt(`Pending requests:\n${list}\n\nEnter number to approve:`);
+        if (numInput === null) {
+          location.reload();
+          return false;
+        }
+
+        const index = parseInt(numInput.trim()) - 1;
         if (!isNaN(index) && pending[index]) {
           const approvedEmail = pending[index].email;
           localStorage.setItem(KEYS.VERIFIED, approvedEmail);
@@ -188,12 +219,20 @@ Enter number:
           alert(`Approved: \( {approvedEmail}\n\n \){WELCOME_MESSAGE}`);
           logEvent('admin_approved', { approvedEmail, admin: adminEmail });
           location.reload();
+        } else {
+          alert('Invalid selection.');
         }
       }
     }
 
     if (action === '2') {
-      const emailToRevoke = prompt('Email to revoke:')?.trim().toLowerCase();
+      const revokeInput = prompt('Email to revoke:');
+      if (revokeInput === null) {
+        location.reload();
+        return false;
+      }
+
+      const emailToRevoke = revokeInput.trim().toLowerCase();
       if (localStorage.getItem(KEYS.VERIFIED) === emailToRevoke) {
         localStorage.removeItem(KEYS.VERIFIED);
         alert(`Revoked: ${emailToRevoke}`);
