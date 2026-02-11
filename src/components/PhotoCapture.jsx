@@ -3,42 +3,44 @@ import { Camera } from 'lucide-react';
 
 const PhotoCapture = ({ onCapture, label, required = true }) => {
   const [captured, setCaptured] = useState(null);
+  const [isStarting, setIsStarting] = useState(false); // NEW: prevent race conditions
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
   const startCamera = async () => {
+    if (isStarting || streamRef.current) return; // prevent double-start
+
+    setIsStarting(true);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, // rear camera – change to 'user' for selfie
+        video: { facingMode: 'environment' },
       });
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
 
-        // Wait until video is actually playing (important on mobile)
         await new Promise((resolve) => {
           videoRef.current.onloadedmetadata = () => {
-            videoRef.current.play().then(resolve);
+            videoRef.current.play().then(resolve).catch(() => resolve());
           };
         });
       }
     } catch (err) {
       console.error('Camera error:', err);
       alert(
-        'Cannot access camera.\n\n' +
-          (err.name === 'NotAllowedError'
-            ? 'Camera permission denied.'
-            : 'Camera not available / secure context required (https).')
+        err.name === 'NotAllowedError'
+          ? 'Camera permission denied. Please allow camera access.'
+          : 'Camera not available (needs HTTPS or permission issue).'
       );
-      // Optional: still allow mock capture if you want
-      // handleMockCapture();
+    } finally {
+      setIsStarting(false);
     }
   };
 
   const takePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+    if (!videoRef.current || !canvasRef.current || !videoRef.current.srcObject) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -49,7 +51,7 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    const photoData = canvas.toDataURL('image/jpeg', 0.92); // \~92% quality
+    const photoData = canvas.toDataURL('image/jpeg', 0.92);
 
     const photo = {
       id: Date.now(),
@@ -62,13 +64,14 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
     setCaptured(photo);
     onCapture(photo);
 
-    // Immediately stop camera – very important for battery + privacy
-    stopCamera();
+    // DELAYED STOP — this is the key fix
+    // Give parent time to show preview before killing stream
+    setTimeout(stopCamera, 1200);
   };
 
   const stopCamera = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
     if (videoRef.current) {
@@ -78,22 +81,26 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
 
   const handleCapture = () => {
     if (captured) {
-      // Optional: allow recapture
+      // Retake: reset and restart
       setCaptured(null);
+      stopCamera(); // extra safety
       startCamera();
     } else {
       startCamera().then(() => {
-        // Small delay gives video time to show – better UX
+        // Wait longer on mobile — 1.5s instead of 0.8s
         setTimeout(() => {
-          if (videoRef.current?.srcObject) {
+          if (videoRef.current?.srcObject && videoRef.current.videoWidth > 0) {
             takePhoto();
+          } else {
+            // Fallback: try again once if failed
+            setTimeout(takePhoto, 800);
           }
-        }, 800);
+        }, 1500);
       });
     }
   };
 
-  // Cleanup on unmount or when component is removed
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopCamera();
@@ -121,7 +128,10 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
             {new Date(captured.timestamp).toLocaleString()}
           </p>
           <button
-            onClick={() => setCaptured(null)}
+            onClick={() => {
+              setCaptured(null);
+              startCamera();
+            }}
             className="w-full bg-red-600 hover:bg-red-700 text-white p-2 rounded transition-colors"
           >
             Take New Photo
@@ -130,24 +140,28 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
       ) : (
         <div className="space-y-3">
           <div className="bg-black rounded overflow-hidden h-48 flex items-center justify-center">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-full h-full object-cover"
-            />
+            {isStarting ? (
+              <p className="text-white">Starting camera...</p>
+            ) : (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            )}
           </div>
 
           <canvas ref={canvasRef} className="hidden" />
 
           <button
             onClick={handleCapture}
-            disabled={!!streamRef.current} // prevent double-click spam
+            disabled={isStarting || !!streamRef.current}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded font-semibold transition-colors disabled:opacity-50"
           >
             <Camera className="inline mr-2" size={18} />
-            {streamRef.current ? 'Capturing...' : 'Capture Photo'}
+            {isStarting ? 'Starting...' : streamRef.current ? 'Capturing...' : 'Capture Photo'}
           </button>
 
           <p className="text-xs text-center text-gray-500">
