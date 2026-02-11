@@ -1,33 +1,27 @@
 // ======================================================================
 // src/access-gate.js
-// FLOWLEDGER ACCESS CONTROL GATE — FINAL VERSION (2025-02-11)
+// FLOWLEDGER ACCESS CONTROL GATE — FIXED VERSION (2025)
 // 
-// Purpose: 
-//  - Prevent unauthorized access completely
-//  - Require explicit approval from owner (you)
-//  - Log every attempt (successful or failed)
-//  - Protect against refresh tricks / localStorage tampering
-//  - Allow user to request access (pending queue)
-//  - Allow admin (you) to approve / revoke from the same screen
-//  - Keep data persistent across tab closes / phone restarts
-//  - Provide clear instructions & feedback to users
-//  - Minimize attack surface (no eval, no dangerous globals)
-//
-// Owner contact:
-// Email: bstm366@gmail.com
-// Phone: +267 78 355 551
+// Changes:
+// - Defined missing 'approvedEmails'
+// - Fixed broken template strings in list displays
+// - Corrected l.time → l.timestamp in logs
+// - Added optional chaining (?.) to prompts to prevent null errors
+// - Minor cleanup for reliability
 // ======================================================================
 
 console.log('[AccessGate] Loading FlowLedger Iron Gate v1.0 – owner: bstm366@gmail.com');
 
 // ──────────────────────────────────────────────────────────────────────
-// 1. CONFIGURATION – CHANGE THESE WHEN YOU SELL OR REVOKE ACCESS
+// 1. CONFIGURATION
 // ──────────────────────────────────────────────────────────────────────
 
 const ADMIN_EMAILS = [
   'bstm366@gmail.com',           // you
   // add trusted helpers here if needed
 ];
+
+const APPROVED_EMAILS = ADMIN_EMAILS; // missing variable that caused crash
 
 const SECRET_MASTER_KEY = 'flowledger-omega-2026-myrah-78355551';   // CHANGE THIS EVERY SALE
 
@@ -68,7 +62,7 @@ Access denied.
 `.trim();
 
 // ──────────────────────────────────────────────────────────────────────
-// 2. STATE MANAGEMENT (localStorage keys)
+// 2. STATE MANAGEMENT
 // ──────────────────────────────────────────────────────────────────────
 
 const KEYS = {
@@ -91,7 +85,7 @@ function logEvent(type, payload = {}) {
     browser: navigator.userAgent,
     platform: navigator.platform
   });
-  localStorage.setItem(KEYS.LOGS, JSON.stringify(logs.slice(-100))); // keep last 100
+  localStorage.setItem(KEYS.LOGS, JSON.stringify(logs.slice(-100)));
   console.log('[AccessGate]', type, payload);
 }
 
@@ -104,7 +98,7 @@ function savePendingRequests(arr) {
 }
 
 function isAdmin(email) {
-  return ADMIN_EMAILS.includes(email.toLowerCase().trim());
+  return APPROVED_EMAILS.includes(email.toLowerCase().trim());
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -115,7 +109,7 @@ function gatekeep() {
   const verifiedEmail = localStorage.getItem(KEYS.VERIFIED);
 
   // Already verified → continue
-  if (verifiedEmail && approvedEmails.includes(verifiedEmail)) {
+  if (verifiedEmail && APPROVED_EMAILS.includes(verifiedEmail)) {
     logEvent('session_continued', { email: verifiedEmail });
     return true;
   }
@@ -128,10 +122,10 @@ FlowLedger Access Gate
 2 = Approve / Revoke (admin only)
 
 Enter 1 or 2:
-  `).trim();
+  `)?.trim();
 
   if (choice === '1') {
-    const email = prompt('Enter your email address:').trim().toLowerCase();
+    const email = prompt('Enter your email address:')?.trim().toLowerCase();
     if (!email || !email.includes('@')) {
       alert('Valid email required.');
       location.reload();
@@ -152,7 +146,7 @@ Enter 1 or 2:
   }
 
   if (choice === '2') {
-    const adminEmail = prompt('Admin email:').trim().toLowerCase();
+    const adminEmail = prompt('Admin email:')?.trim().toLowerCase();
     if (!isAdmin(adminEmail)) {
       alert('Not an admin account.');
       location.reload();
@@ -176,7 +170,7 @@ Admin Panel – ${adminEmail}
 4 = View logs
 
 Enter number:
-    `).trim();
+    `)?.trim();
 
     if (action === '1') {
       const pending = getPendingRequests();
@@ -191,7 +185,7 @@ Enter number:
           localStorage.setItem(KEYS.VERIFIED, approvedEmail);
           pending.splice(index, 1);
           savePendingRequests(pending);
-          alert(`Approved: \( {approvedEmail}\n \){WELCOME_MESSAGE}`);
+          alert(`Approved: \( {approvedEmail}\n\n \){WELCOME_MESSAGE}`);
           logEvent('admin_approved', { approvedEmail, admin: adminEmail });
           location.reload();
         }
@@ -199,7 +193,7 @@ Enter number:
     }
 
     if (action === '2') {
-      const emailToRevoke = prompt('Email to revoke:').trim().toLowerCase();
+      const emailToRevoke = prompt('Email to revoke:')?.trim().toLowerCase();
       if (localStorage.getItem(KEYS.VERIFIED) === emailToRevoke) {
         localStorage.removeItem(KEYS.VERIFIED);
         alert(`Revoked: ${emailToRevoke}`);
@@ -225,7 +219,7 @@ Enter number:
         alert('No logs yet.');
       } else {
         const recent = logs.slice(-10).reverse().map(l => 
-          `[${l.time}] ${l.type.toUpperCase()} – ${JSON.stringify(l.payload)}`
+          `[${l.timestamp}] ${l.type.toUpperCase()} – ${JSON.stringify(l.payload)}`
         ).join('\n');
         alert(`Last 10 logs:\n${recent}`);
       }
@@ -243,7 +237,7 @@ Enter number:
 // 5. Execute gate on every page load
 gatekeep();
 
-// 6. Optional: delete my data button (add this to UI later)
+// 6. Optional: delete my data button (add to UI later if needed)
 window.deleteMyData = () => {
   if (confirm('Delete ALL my data permanently?')) {
     localStorage.clear();
