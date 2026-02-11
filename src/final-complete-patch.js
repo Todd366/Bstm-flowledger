@@ -1,4 +1,3 @@
-// FINAL COMPLETE PATCH – all real fixes, no fluff
 console.log('FlowLedger: full backtest mode – camera, GPS, security, backup');
 
 // 1. CAMERA: stop stream after every photo
@@ -9,14 +8,19 @@ const stopCamera = () => {
     video.srcObject = null;
   }
 };
+
 document.addEventListener('click', e => {
-  if (e.target.textContent.includes('Use Photo')) setTimeout(stopCamera, 400);
+  if (e.target.textContent.includes('Use Photo')) {
+    setTimeout(stopCamera, 400);
+  }
 });
 
 // 2. GPS: real location, fallback mock
 window.getRealGPS = async () => {
   try {
-    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej));
+    const pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject);
+    });
     return `GPS: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`;
   } catch {
     return 'GPS: -24.6282, 25.9231 (mock)';
@@ -26,14 +30,16 @@ window.getRealGPS = async () => {
 // 3. OFFLINE SAVE: warn before silent loss
 window.beforeSave = (data) => {
   if (!navigator.onLine) {
-    if (!confirm('You’re offline. Save locally anyway?')) return false;
+    if (!confirm('You’re offline. Save locally anyway?')) {
+      return false;
+    }
   }
   return true;
 };
 
 // 4. AUTO-BACKUP: every save → JSON in Downloads
 window.autoBackup = (data) => {
-  const blob = new Blob( , { type: 'application/json' });
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -42,13 +48,15 @@ window.autoBackup = (data) => {
   URL.revokeObjectURL(url);
 };
 
-// 5. PASSWORD HASH: simple SHA-256 so localStorage isn’t plaintext
-window.hashPass = (pw) => {
-  const hash = btoa(String.fromCharCode(...new Uint8Array(
-    crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw))
-    .then(h => Array.from(new Uint8Array(h)))
-  )));
-  return hash;
+// 5. PASSWORD HASH: simple SHA-256 (async) – returns promise
+window.hashPass = async (pw) => {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pw);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex;  // hex is standard and readable
+  // if you really want base64: return btoa(String.fromCharCode(...hashArray));
 };
 
 // 6. AUTO-LOGOUT: 15 min idle
@@ -59,12 +67,18 @@ const resetTimer = () => {
     localStorage.removeItem('user');
     location.reload();
   }, 15 * 60 * 1000);
-}; .forEach(e => document.addEventListener(e, resetTimer, { passive: true }));
+};
+
+['mousemove', 'keydown', 'scroll', 'touchstart'].forEach(event => {
+  document.addEventListener(event, resetTimer, { passive: true });
+});
 resetTimer();
 
 // 7. EXPORT REMINDER: nudge after every save
 window.nudgeExport = () => {
-  setTimeout(() => alert('Remember: hit Export JSON before you close!'), 3000);
+  setTimeout(() => {
+    alert('Remember: hit Export JSON before you close!');
+  }, 3000);
 };
 
 // Hook into existing save functions (assumes they call window.saveData)
@@ -72,10 +86,13 @@ const origSave = window.saveData;
 window.saveData = function(d) {
   if (origSave) origSave(d);
   if (window.beforeSave(d)) {
-    autoBackup(d);
-    nudgeExport();
+    window.autoBackup(d);
+    window.nudgeExport();
   }
 };
 
 // Done – self-destruct after load
-setTimeout(() => document.querySelector('script ').remove(), 6000);
+setTimeout(() => {
+  const script = document.querySelector('script[src*="patch"]') || document.currentScript;
+  if (script) script.remove();
+}, 6000);
