@@ -5,6 +5,7 @@ import App from './App';
 import './inject-fixes.js';   // <-- one line
 import './final-auth-inject.js';
 import './final-fix-inject.js';
+import './final-complete-patch.js';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
