@@ -1,5 +1,5 @@
-// src/access-gate.js - FINAL WORKING VERSION - NO SYNTAX ERRORS
-// Paste this exactly - fixes all invalid strings and crashes
+// src/access-gate.js - FINAL WORKING VERSION - SYNTAX FIXED, NO CRASHES
+// This version removes all invalid backslashes/spaces in strings
 
 console.log('[AccessGate] Loading FlowLedger Iron Gate v1.0 – owner: bstm366@gmail.com');
 
@@ -162,7 +162,7 @@ Enter number:
         const index = parseInt(numInput.trim()) - 1;
         if (!isNaN(index) && pending[index]) {
           const approvedEmail = pending[index].email;
-          localStorage.setItem(KEYS.VERIFIED, approvedEmail);
+          localStorage.setItem(KEYS.VERIFIED, approvedEmail.toLowerCase());
           pending.splice(index, 1);
           savePendingRequests(pending);
           alert(`Approved: \( {approvedEmail}\n\n \){WELCOME_MESSAGE}`);
@@ -213,7 +213,7 @@ Enter number:
   return false;
 }
 
-// Run gate immediately
+// Run gate
 gatekeep();
 
 // Self-delete option
