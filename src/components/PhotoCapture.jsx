@@ -3,15 +3,17 @@ import { Camera } from 'lucide-react';
 
 const PhotoCapture = ({ onCapture, label, required = true }) => {
   const [captured, setCaptured] = useState(null);
-  const [isStarting, setIsStarting] = useState(false); // NEW: prevent race conditions
+  const [isStarting, setIsStarting] = useState(false);
+  const [error, setError] = useState(null); // NEW: show user errors
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
   const startCamera = async () => {
-    if (isStarting || streamRef.current) return; // prevent double-start
+    if (isStarting || streamRef.current) return;
 
     setIsStarting(true);
+    setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
@@ -23,16 +25,21 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
 
         await new Promise((resolve) => {
           videoRef.current.onloadedmetadata = () => {
-            videoRef.current.play().then(resolve).catch(() => resolve());
+            videoRef.current.play()
+              .then(resolve)
+              .catch((e) => {
+                console.warn('Play failed:', e);
+                resolve();
+              });
           };
         });
       }
     } catch (err) {
       console.error('Camera error:', err);
-      alert(
+      setError(
         err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Please allow camera access.'
-          : 'Camera not available (needs HTTPS or permission issue).'
+          ? 'Camera permission denied. Please allow access in browser settings.'
+          : 'Camera not available. Try HTTPS or check device camera.'
       );
     } finally {
       setIsStarting(false);
@@ -40,9 +47,17 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
   };
 
   const takePhoto = () => {
-    if (!videoRef.current || !canvasRef.current || !videoRef.current.srcObject) return;
+    if (!videoRef.current || !canvasRef.current || !videoRef.current.srcObject) {
+      setError('Camera not ready. Try again.');
+      return;
+    }
 
     const video = videoRef.current;
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      setError('Camera preview not loaded. Try recapture.');
+      return;
+    }
+
     const canvas = canvasRef.current;
 
     canvas.width = video.videoWidth;
@@ -64,9 +79,17 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
     setCaptured(photo);
     onCapture(photo);
 
-    // DELAYED STOP — this is the key fix
-    // Give parent time to show preview before killing stream
-    setTimeout(stopCamera, 1200);
+    // DELAYED STOP – critical for preview to show
+    setTimeout(() => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      console.log('[Camera] Stream stopped after delay');
+    }, 1500); // increased to 1.5s for slow devices
   };
 
   const stopCamera = () => {
@@ -81,26 +104,25 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
 
   const handleCapture = () => {
     if (captured) {
-      // Retake: reset and restart
       setCaptured(null);
-      stopCamera(); // extra safety
+      stopCamera();
       startCamera();
     } else {
       startCamera().then(() => {
-        // Wait longer on mobile — 1.5s instead of 0.8s
         setTimeout(() => {
           if (videoRef.current?.srcObject && videoRef.current.videoWidth > 0) {
             takePhoto();
           } else {
-            // Fallback: try again once if failed
-            setTimeout(takePhoto, 800);
+            // fallback retry
+            setTimeout(() => {
+              if (videoRef.current?.srcObject) takePhoto();
+            }, 1200);
           }
         }, 1500);
       });
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopCamera();
@@ -139,8 +161,10 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
         </div>
       ) : (
         <div className="space-y-3">
-          <div className="bg-black rounded overflow-hidden h-48 flex items-center justify-center">
-            {isStarting ? (
+          <div className="bg-black rounded overflow-hidden h-48 flex items-center justify-center relative">
+            {error ? (
+              <p className="text-red-500 text-center p-2">{error}</p>
+            ) : isStarting ? (
               <p className="text-white">Starting camera...</p>
             ) : (
               <video
@@ -157,12 +181,24 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
 
           <button
             onClick={handleCapture}
-            disabled={isStarting || !!streamRef.current}
+            disabled={isStarting || !!streamRef.current || error}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded font-semibold transition-colors disabled:opacity-50"
           >
             <Camera className="inline mr-2" size={18} />
-            {isStarting ? 'Starting...' : streamRef.current ? 'Capturing...' : 'Capture Photo'}
+            {error ? 'Retry' : isStarting ? 'Starting...' : streamRef.current ? 'Capturing...' : 'Capture Photo'}
           </button>
+
+          {error && (
+            <button
+              onClick={() => {
+                setError(null);
+                startCamera();
+              }}
+              className="w-full bg-yellow-600 text-white p-2 rounded mt-2"
+            >
+              Retry Camera
+            </button>
+          )}
 
           <p className="text-xs text-center text-gray-500">
             {label} {required && <span className="text-red-500">*</span>}
