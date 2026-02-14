@@ -1,8 +1,8 @@
-// src/access-gate.js - FINAL VERSION - NO CRASHES, NO INVALID SYNTAX
+// src/access-gate.js - WORKING VERSION - NO SYNTAX ERRORS, NO CRASHES
 console.log('[AccessGate] Loading FlowLedger Iron Gate v1.0 – owner: bstm366@gmail.com');
 
 // CONFIG
-const ADMIN_EMAILS = ['bstm366@gmail.com']; // you
+const ADMIN_EMAILS = ['bstm366@gmail.com'];
 const APPROVED_EMAILS = ADMIN_EMAILS;
 
 const SECRET_MASTER_KEY = 'flowledger-omega-2026-myrah-78355551';
@@ -192,7 +192,6 @@ Enter number:`);
     return false;
   }
 
-  // Invalid choice
   location.reload();
   return false;
 }
