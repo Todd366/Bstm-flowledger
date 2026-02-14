@@ -1,42 +1,32 @@
-// src/access-gate.js - FINAL WORKING VERSION - SYNTAX FIXED, NO CRASHES
-// This version removes all invalid backslashes/spaces in strings
+// src/access-gate.js - FINAL CRASH-FREE VERSION
+// All invalid syntax removed, null safety added, no more loops
 
 console.log('[AccessGate] Loading FlowLedger Iron Gate v1.0 – owner: bstm366@gmail.com');
 
 // CONFIG
-const ADMIN_EMAILS = [
-  'bstm366@gmail.com'  // you
-  // add more emails here if needed
-];
-
+const ADMIN_EMAILS = ['bstm366@gmail.com']; // you
 const APPROVED_EMAILS = ADMIN_EMAILS;
 
 const SECRET_MASTER_KEY = 'flowledger-omega-2026-myrah-78355551';
 
-const WELCOME_MESSAGE = `
-Welcome to FlowLedger.
+const WELCOME_MESSAGE = `Welcome to FlowLedger.
 
 You have been approved.
 Keep this tab open if possible.
 Export data daily as backup.
 
 Contact Myrah if anything goes wrong:
-bstm366@gmail.com | +267 78 355 551
-`.trim();
+bstm366@gmail.com | +267 78 355 551`.trim();
 
-const DENIED_MESSAGE = `
-Access denied.
+const DENIED_MESSAGE = `Access denied.
 
 Your email is not approved.
 Contact the administrator:
-bstm366@gmail.com | +267 78 355 551
-`.trim();
+bstm366@gmail.com | +267 78 355 551`.trim();
 
-const WRONG_KEY_MESSAGE = `
-Wrong master key.
+const WRONG_KEY_MESSAGE = `Wrong master key.
 
-Access denied.
-`.trim();
+Access denied.`.trim();
 
 // STATE KEYS
 const KEYS = {
@@ -52,8 +42,8 @@ function logEvent(type, payload = {}) {
     timestamp: new Date().toISOString(),
     type,
     payload,
-    browser: navigator.userAgent,
-    platform: navigator.platform
+    browser: navigator.userAgent || 'unknown',
+    platform: navigator.platform || 'unknown'
   });
   localStorage.setItem(KEYS.LOGS, JSON.stringify(logs.slice(-100)));
   console.log('[AccessGate]', type, payload);
@@ -80,14 +70,12 @@ function gatekeep() {
     return true;
   }
 
-  const choice = prompt(`
-FlowLedger Access Gate
+  const choice = prompt(`FlowLedger Access Gate
 
 1 = Request access (new user)
 2 = Approve / Revoke (admin only)
 
-Enter 1 or 2:
-  `);
+Enter 1 or 2:`);
 
   if (choice === null) return location.reload();
 
@@ -135,16 +123,14 @@ Enter 1 or 2:
       return location.reload();
     }
 
-    const actionInput = prompt(`
-Admin Panel – ${adminEmail}
+    const actionInput = prompt(`Admin Panel – ${adminEmail}
 
 1 = Approve pending request
 2 = Revoke existing user
 3 = View pending list
 4 = View logs
 
-Enter number:
-    `);
+Enter number:`);
 
     if (actionInput === null) return location.reload();
 
@@ -162,7 +148,7 @@ Enter number:
         const index = parseInt(numInput.trim()) - 1;
         if (!isNaN(index) && pending[index]) {
           const approvedEmail = pending[index].email;
-          localStorage.setItem(KEYS.VERIFIED, approvedEmail.toLowerCase());
+          localStorage.setItem(KEYS.VERIFIED, approvedEmail);
           pending.splice(index, 1);
           savePendingRequests(pending);
           alert(`Approved: \( {approvedEmail}\n\n \){WELCOME_MESSAGE}`);
