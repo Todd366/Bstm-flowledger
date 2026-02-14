@@ -1,6 +1,4 @@
-// src/access-gate.js - FINAL CRASH-FREE VERSION
-// All invalid syntax removed, null safety added, no more loops
-
+// src/access-gate.js - FINAL VERSION - NO CRASHES, NO INVALID SYNTAX
 console.log('[AccessGate] Loading FlowLedger Iron Gate v1.0 – owner: bstm366@gmail.com');
 
 // CONFIG
