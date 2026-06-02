@@ -1,307 +1,127 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Package, Truck, CheckCircle, AlertTriangle, LogOut, Download, Shield, ChevronRight, DollarSign, Map, TrendingUp, Bell, X, Github } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Camera, Package, Truck, CheckCircle, AlertTriangle, LogOut, Download, Shield,
+  ChevronRight, DollarSign, Map, TrendingUp, Bell, X, Github, Settings, Lock,
+  AlertCircle, CheckCircle2, Clock, Users, Activity, BarChart3, Home
+} from 'lucide-react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import CONFIG from './config';
+import { ValidationUtils, StorageUtils, ErrorHandler, DateUtils, NumberUtils, ArrayUtils } from './utils/helpers';
+import { AuthService, SubscriptionService, CompanyService, SettingsService } from './utils/auth';
 
-// Access Gate Logic
-const KEYS = {
-  VERIFIED: 'flowledger_verified_email',
-  PENDING: 'flowledger_pending_requests',
-  LOGS: 'flowledger_access_logs'
-};
-
-const ADMIN_EMAILS = ['bstm366@gmail.com'];
-const APPROVED_EMAILS = ADMIN_EMAILS;
-const SECRET_MASTER_KEY = 'flowledger-omega-2026-myrah-78355551';
-
-const WELCOME_MESSAGE = `Welcome to FlowLedger.
-
-You have been approved.
-Keep this tab open if possible.
-Export data daily as backup.
-
-Contact Myrah if anything goes wrong:
-bstm366@gmail.com | +267 78 355 551`.trim();
-
-const DENIED_MESSAGE = `Access denied.
-
-Your email is not approved.
-Contact the administrator:
-bstm366@gmail.com | +267 78 355 551`.trim();
-
-const WRONG_KEY_MESSAGE = `Wrong master key.
-
-Access denied.`.trim();
-
-function logEvent(type, payload = {}) {
-  const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
-  logs.push({
-    timestamp: new Date().toISOString(),
-    type,
-    payload,
-    browser: navigator.userAgent || 'unknown',
-    platform: navigator.platform || 'unknown'
-  });
-  localStorage.setItem(KEYS.LOGS, JSON.stringify(logs.slice(-100)));
-  console.log('[AccessGate]', type, payload);
-}
-
-function getPendingRequests() {
-  return JSON.parse(localStorage.getItem(KEYS.PENDING) || '[]');
-}
-
-function savePendingRequests(arr) {
-  localStorage.setItem(KEYS.PENDING, JSON.stringify(arr));
-}
-
-function isAdmin(email) {
-  return APPROVED_EMAILS.includes(email.toLowerCase().trim());
-}
-
-function gatekeep() {
-  const verifiedEmail = localStorage.getItem(KEYS.VERIFIED);
-
-  if (verifiedEmail && APPROVED_EMAILS.includes(verifiedEmail)) {
-    logEvent('session_continued', { email: verifiedEmail });
-    return true;
+// ============ ERROR BOUNDARY ============
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
   }
 
-  const choice = prompt(`FlowLedger Access Gate
-
-1 = Request access (new user)
-2 = Approve / Revoke (admin only)
-
-Enter 1 or 2:`);
-
-  if (choice === null) return false;
-
-  const trimmedChoice = choice.trim();
-
-  if (trimmedChoice === '1') {
-    const emailInput = prompt('Enter your email address:');
-    if (emailInput === null) return false;
-
-    const email = emailInput.trim().toLowerCase();
-    if (!email || !email.includes('@')) {
-      alert('Valid email required.');
-      return false;
-    }
-
-    let pending = getPendingRequests();
-    if (pending.some(p => p.email === email)) {
-      alert('Request already pending. Wait for approval.');
-    } else {
-      pending.push({ email, requestedAt: Date.now(), status: 'pending' });
-      savePendingRequests(pending);
-      alert('Request sent. Administrator will review shortly.');
-      logEvent('access_request', { email });
-    }
-    return false;
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
   }
 
-  if (trimmedChoice === '2') {
-    const adminInput = prompt('Admin email:');
-    if (adminInput === null) return false;
-
-    const adminEmail = adminInput.trim().toLowerCase();
-    if (!isAdmin(adminEmail)) {
-      alert('Not an admin account.');
-      return false;
-    }
-
-    const keyInput = prompt('Enter master key:');
-    if (keyInput === null) return false;
-
-    if (keyInput !== SECRET_MASTER_KEY) {
-      alert(WRONG_KEY_MESSAGE);
-      logEvent('admin_wrong_key', { attemptedEmail: adminEmail });
-      return false;
-    }
-
-    const actionInput = prompt(`Admin Panel – ${adminEmail}
-
-1 = Approve pending request
-2 = Revoke existing user
-3 = View pending list
-4 = View logs
-
-Enter number:`);
-
-    if (actionInput === null) return false;
-
-    const action = actionInput.trim();
-
-    if (action === '1') {
-      const pending = getPendingRequests();
-      if (pending.length === 0) {
-        alert('No pending requests.');
-      } else {
-        const list = pending.map((p, i) => `${i+1}. ${p.email} (${new Date(p.requestedAt).toLocaleString()})`).join('\n');
-        const numInput = prompt(`Pending requests:\n${list}\n\nEnter number to approve:`);
-        if (numInput === null) return false;
-
-        const index = parseInt(numInput.trim()) - 1;
-        if (!isNaN(index) && pending[index]) {
-          const approvedEmail = pending[index].email;
-          localStorage.setItem(KEYS.VERIFIED, approvedEmail);
-          pending.splice(index, 1);
-          savePendingRequests(pending);
-          alert(`Approved: ${approvedEmail}\n\n${WELCOME_MESSAGE}`);
-          logEvent('admin_approved', { approvedEmail, admin: adminEmail });
-          return true;
-        } else {
-          alert('Invalid number selected.');
-          return false;
-        }
-      }
-    } else if (action === '2') {
-      const revokeInput = prompt('Email to revoke:');
-      if (revokeInput === null) return false;
-
-      const emailToRevoke = revokeInput.trim().toLowerCase();
-      if (localStorage.getItem(KEYS.VERIFIED) === emailToRevoke) {
-        localStorage.removeItem(KEYS.VERIFIED);
-        alert(`Revoked: ${emailToRevoke}`);
-        logEvent('admin_revoked', { revokedEmail: emailToRevoke, admin: adminEmail });
-        return false;
-      } else {
-        alert('Not currently logged in as that user.');
-        return false;
-      }
-    } else if (action === '3') {
-      const pending = getPendingRequests();
-      if (pending.length === 0) {
-        alert('No pending requests.');
-      } else {
-        const list = pending.map((p, i) => `${i+1}. ${p.email} (${new Date(p.requestedAt).toLocaleString()})`).join('\n');
-        alert(`Pending requests:\n${list}`);
-      }
-      return false;
-    } else if (action === '4') {
-      const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
-      if (logs.length === 0) {
-        alert('No logs yet.');
-      } else {
-        const recent = logs.slice(-10).reverse().map(l => 
-          `[${l.timestamp}] ${l.type.toUpperCase()} – ${JSON.stringify(l.payload)}`
-        ).join('\n');
-        alert(`Last 10 logs:\n${recent}`);
-      }
-      return false;
-    }
-
-    return false;
+  componentDidCatch(error, info) {
+    ErrorHandler.error('React Error Boundary', error);
   }
 
-  return false;
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-red-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-lg p-8 max-w-md w-full text-center">
+            <AlertCircle className="w-16 h-16 text-red-600 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-red-600 mb-2">Something went wrong</h1>
+            <p className="text-gray-600 mb-4">{this.state.error?.message}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full bg-red-600 text-white p-3 rounded-lg font-semibold hover:bg-red-700"
+            >
+              Reload Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
-const useStorage = () => {
-  const [data, setData] = useState({
-    batches: [], dispatches: [], receipts: [], incidents: [], notifications: [],
-    analytics: { transporterScores: {} },
-    users: [
-      { id: 1, name: 'John Keeper', role: 'storekeeper', pin: '1111', trustScore: 98 },
-      { id: 2, name: 'Mary Dispatch', role: 'dispatcher', pin: '2222', trustScore: 95 },
-      { id: 3, name: 'Peter Driver', role: 'driver', pin: '3333', trustScore: 92 },
-      { id: 4, name: 'Sarah Receiver', role: 'receiver', pin: '4444', trustScore: 96 },
-      { id: 5, name: 'Owner Boss', role: 'manager', pin: '5555', trustScore: 100 }
-    ]
-  });
+// ============ CAMERA COMPONENT ============
+const PhotoCapture = ({ onCapture, label }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [captured, setCaptured] = useState(null);
+  const [error, setError] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
 
-  const save = (key, value) => {
-    setData(prev => {
-      const updated = { ...prev, [key]: value };
-      if (typeof window !== 'undefined') {
-        try { localStorage.setItem('flowledger_data', JSON.stringify(updated)); } catch (e) {}
+  const startCamera = useCallback(async () => {
+    try {
+      setError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
       }
-      return updated;
-    });
-  };
-
-  const addNotification = (type, message, severity = 'info') => {
-    const notif = { id: Date.now(), type, message, severity, timestamp: new Date().toISOString(), read: false };
-    save('notifications', [notif, ...data.notifications].slice(0, 50));
-  };
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('flowledger_data');
-      if (stored) {
-        try { setData(prev => ({ ...prev, ...JSON.parse(stored) })); } catch (e) {}
-      }
+      setIsOpen(true);
+    } catch (err) {
+      ErrorHandler.error('Camera access denied', err);
+      setError('Camera access denied. Please enable in settings.');
     }
   }, []);
 
-  const updateAnalytics = () => {
-    const scores = {};
-    data.dispatches.forEach(d => {
-      if (d.transporter) {
-        if (!scores[d.transporter]) scores[d.transporter] = { total: 0, incidents: 0 };
-        scores[d.transporter].total++;
-      }
-    });
-    data.incidents.forEach(inc => {
-      const d = data.dispatches.find(x => x.id === inc.dispatchId);
-      if (d?.transporter && scores[d.transporter]) scores[d.transporter].incidents++;
-    });
-    Object.keys(scores).forEach(t => {
-      scores[t].trustScore = scores[t].total > 0 ? Math.round(((scores[t].total - scores[t].incidents) / scores[t].total) * 100) : 100;
-    });
-    save('analytics', { ...data.analytics, transporterScores: scores });
-  };
-
-  return { data, save, addNotification, updateAnalytics };
-};
-
-// Real Camera (replaces your mock PhotoCapture — same appearance)
-const RealCamera = ({ onCapture, label }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [captured, setCaptured] = useState(null);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-      if (videoRef.current) videoRef.current.srcObject = stream;
-      setIsOpen(true);
-    } catch (err) {
-      alert('Camera denied. Enable in phone settings.');
-    }
-  };
-
-  const takePhoto = () => {
+  const takePhoto = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
     canvas.toBlob(blob => {
       const reader = new FileReader();
       reader.onload = () => setCaptured(reader.result);
       reader.readAsDataURL(blob);
-      video.srcObject.getTracks().forEach(track => track.stop());
     });
-  };
+  }, []);
 
-  const confirm = () => {
-    if (onCapture) onCapture({ data: captured, timestamp: new Date().toISOString() });
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  }, []);
+
+  const confirmPhoto = useCallback(() => {
+    if (onCapture && captured) {
+      onCapture({ data: captured, timestamp: new Date().toISOString() });
+    }
     setIsOpen(false);
     setCaptured(null);
-  };
+    stopCamera();
+  }, [captured, onCapture, stopCamera]);
+
+  const retakePhoto = useCallback(() => {
+    setCaptured(null);
+  }, []);
 
   if (captured) {
     return (
-      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-        <div className="bg-gradient-to-br from-gray-100 to-gray-200 h-32 rounded flex items-center justify-center relative">
-          <img src={captured} alt="Captured" className="w-full h-full object-cover rounded" />
-          <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded">✓</div>
+      <div className="border-2 border-dashed border-blue-300 rounded-lg p-4 bg-blue-50">
+        <div className="bg-gray-200 h-48 rounded flex items-center justify-center relative overflow-hidden mb-3">
+          <img src={captured} alt="Captured" className="w-full h-full object-cover" />
+          <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" /> Captured
+          </div>
         </div>
-        <p className="text-xs text-center text-gray-600">{new Date().toLocaleString()}</p>
-        <div className="flex gap-2 mt-2">
-          <button onClick={() => setCaptured(null)} className="flex-1 bg-gray-300 p-2 rounded">Retake</button>
-          <button onClick={confirm} className="flex-1 bg-green-600 text-white p-2 rounded">Use Photo</button>
+        <p className="text-xs text-center text-gray-600 mb-3">{DateUtils.format(new Date(), 'long')}</p>
+        <div className="flex gap-2">
+          <button onClick={retakePhoto} className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 p-2 rounded font-semibold transition">Retake</button>
+          <button onClick={confirmPhoto} className="flex-1 bg-green-600 hover:bg-green-700 text-white p-2 rounded font-semibold transition">Use Photo</button>
         </div>
       </div>
     );
@@ -309,58 +129,76 @@ const RealCamera = ({ onCapture, label }) => {
 
   if (isOpen) {
     return (
-      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-        <video ref={videoRef} autoPlay playsInline className="w-full rounded" />
+      <div className="border-2 border-dashed border-blue-300 rounded-lg p-4 bg-blue-50">
+        <video ref={videoRef} autoPlay playsInline className="w-full rounded mb-3 bg-black" />
         <canvas ref={canvasRef} className="hidden" />
-        <button onClick={takePhoto} className="bg-blue-600 text-white px-4 py-2 rounded w-full font-semibold mt-2">Capture Photo</button>
+        <div className="flex gap-2">
+          <button onClick={() => { stopCamera(); setIsOpen(false); }} className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-800 p-2 rounded font-semibold transition">Cancel</button>
+          <button onClick={takePhoto} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white p-2 rounded font-semibold transition">📸 Capture</button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-      <div className="bg-gradient-to-br from-gray-100 to-gray-200 h-32 rounded flex items-center justify-center relative">
-        <Camera className="w-10 h-10 text-gray-500" />
+    <div className="border-2 border-dashed border-blue-300 rounded-lg p-4 bg-blue-50 text-center">
+      <div className="bg-blue-100 h-32 rounded flex items-center justify-center mb-3">
+        <Camera className="w-12 h-12 text-blue-500" />
       </div>
-      <button onClick={startCamera} className="bg-blue-600 text-white px-4 py-2 rounded w-full font-semibold mt-2">Take Photo</button>
-      <p className="text-xs text-center text-gray-600">{label}</p>
+      {error && <p className="text-red-600 text-xs mb-2">{error}</p>}
+      <button onClick={startCamera} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded font-semibold transition">Open Camera</button>
+      <p className="text-xs text-gray-600 mt-2">{label}</p>
     </div>
   );
 };
 
+// ============ TRUST BADGE ============
 const TrustBadge = ({ score }) => {
-  const color = score >= 95 ? 'text-green-600' : score >= 80 ? 'text-yellow-600' : 'text-red-600';
-  return <div className={`flex items-center gap-1 ${color} font-semibold text-sm`}><Shield className="w-4 h-4" /><span>{score}%</span></div>;
+  let bgColor = 'bg-green-100';
+  let textColor = 'text-green-700';
+  if (score < 95) bgColor = 'bg-yellow-100';
+  if (score < 80) bgColor = 'bg-red-100';
+  if (score < 95) textColor = 'text-yellow-700';
+  if (score < 80) textColor = 'text-red-700';
+
+  return (
+    <div className={`flex items-center gap-2 ${textColor} font-semibold text-sm ${bgColor} px-3 py-1 rounded-full w-fit`}>
+      <Shield className="w-4 h-4" />
+      <span>{score}%</span>
+    </div>
+  );
 };
 
+// ============ LIVE MAP ============
 const LiveMap = ({ dispatches }) => {
   const inTransit = dispatches.filter(d => d.status === 'in_transit');
+
   return (
     <div className="bg-gradient-to-br from-blue-100 to-green-100 rounded-lg p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-bold text-lg flex items-center gap-2"><Map className="w-5 h-5" />Live Tracking</h3>
-        <span className="bg-green-500 text-white text-xs px-2 py-1 rounded-full">{inTransit.length} Active</span>
+        <span className="bg-green-500 text-white text-xs px-3 py-1 rounded-full font-semibold">{inTransit.length} Active</span>
       </div>
       <div className="space-y-3">
         {inTransit.length === 0 ? (
           <p className="text-gray-600 text-center py-8">No active deliveries</p>
         ) : (
           inTransit.map((d, i) => (
-            <div key={d.id} className="bg-white bg-opacity-80 rounded-lg p-3 shadow">
-              <div className="flex items-center justify-between">
+            <div key={d.id} className="bg-white rounded-lg p-4 shadow-sm hover:shadow-md transition">
+              <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Truck className="w-5 h-5 text-blue-600" />
                   <div>
                     <p className="font-semibold text-sm">{d.productName}</p>
-                    <p className="text-xs text-gray-600">{d.driver} - {d.vehicle}</p>
+                    <p className="text-xs text-gray-600">{d.driver} • {d.vehicle}</p>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-gray-500">ETA</p>
-                  <p className="text-sm font-semibold">{new Date(d.expectedDelivery).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="text-sm font-semibold">{DateUtils.format(d.expectedDelivery, 'time')}</p>
                 </div>
               </div>
-              <div className="mt-2 bg-gray-200 rounded-full h-2">
+              <div className="bg-gray-200 rounded-full h-2">
                 <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${30 + (i * 20)}%` }} />
               </div>
             </div>
@@ -371,9 +209,10 @@ const LiveMap = ({ dispatches }) => {
   );
 };
 
+// ============ ANALYTICS DASHBOARD ============
 const AnalyticsDashboard = ({ data }) => {
   const totalBatches = data.batches.length;
-  const totalValue = data.batches.reduce((s, b) => s + (b.quantity * b.unitCost), 0);
+  const totalValue = ArrayUtils.sum(data.batches, 'quantity');
   const completed = data.dispatches.filter(d => d.status === 'completed').length;
   const total = data.dispatches.length;
   const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
@@ -383,45 +222,38 @@ const AnalyticsDashboard = ({ data }) => {
     return s + ((inc.quantityExpected - inc.quantityReceived) * (b?.unitCost || 0));
   }, 0);
 
+  const StatCard = ({ icon: Icon, label, value, subtext, color }) => (
+    <div className={`bg-gradient-to-br ${color} text-white rounded-lg p-4 shadow-lg`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs opacity-90">{label}</p>
+          <p className="text-2xl font-bold mt-1">{value}</p>
+          {subtext && <p className="text-xs mt-1 opacity-75">{subtext}</p>}
+        </div>
+        <Icon className="w-10 h-10 opacity-80" />
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg p-4 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs opacity-90">Inventory</p><p className="text-2xl font-bold">{totalBatches}</p><p className="text-xs mt-1">P {totalValue.toFixed(0)}</p></div>
-            <Package className="w-10 h-10 opacity-80" />
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-lg p-4 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs opacity-90">Success</p><p className="text-2xl font-bold">{successRate}%</p><p className="text-xs mt-1">{completed}/{total}</p></div>
-            <CheckCircle className="w-10 h-10 opacity-80" />
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg p-4 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs opacity-90">In Transit</p><p className="text-2xl font-bold">{data.dispatches.filter(d => d.status === 'in_transit').length}</p></div>
-            <Truck className="w-10 h-10 opacity-80" />
-          </div>
-        </div>
-        <div className="bg-gradient-to-br from-red-500 to-red-600 text-white rounded-lg p-4 shadow-lg">
-          <div className="flex items-center justify-between">
-            <div><p className="text-xs opacity-90">Loss</p><p className="text-2xl font-bold">P {lossValue.toFixed(0)}</p><p className="text-xs mt-1">{data.incidents.length}</p></div>
-            <AlertTriangle className="w-10 h-10 opacity-80" />
-          </div>
-        </div>
+        <StatCard icon={Package} label="Inventory" value={totalBatches} subtext={`₱${totalValue}`} color="from-blue-500 to-blue-600" />
+        <StatCard icon={CheckCircle} label="Success" value={`${successRate}%`} subtext={`${completed}/${total}`} color="from-green-500 to-green-600" />
+        <StatCard icon={Truck} label="In Transit" value={data.dispatches.filter(d => d.status === 'in_transit').length} color="from-purple-500 to-purple-600" />
+        <StatCard icon={AlertTriangle} label="Loss" value={`₱${lossValue.toFixed(0)}`} subtext={`${data.incidents.length} incidents`} color="from-red-500 to-red-600" />
       </div>
 
       <div className="bg-white rounded-lg p-4 border shadow-sm">
-        <h3 className="font-bold mb-3 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-green-600" />Transporters</h3>
+        <h3 className="font-bold mb-3 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-green-600" />Transporter Performance</h3>
         {Object.keys(data.analytics.transporterScores).length === 0 ? (
-          <p className="text-gray-500 text-center py-4">No data yet</p>
+          <p className="text-gray-500 text-center py-8">No data yet</p>
         ) : (
           <div className="space-y-3">
             {Object.entries(data.analytics.transporterScores).map(([name, score]) => (
-              <div key={name} className="border rounded-lg p-3">
+              <div key={name} className="border rounded-lg p-3 hover:bg-gray-50 transition">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold">{name}</span>
+                  <span className="font-semibold text-sm">{name}</span>
                   <TrustBadge score={score.trustScore} />
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
@@ -437,92 +269,216 @@ const AnalyticsDashboard = ({ data }) => {
   );
 };
 
-const ManagerView = ({ data }) => {
-  const [view, setView] = useState('dashboard');
-  const [tab, setTab] = useState('analytics');
-  const [selectedBatch, setSelectedBatch] = useState(null);
+// ============ DATA MANAGEMENT ============
+const useAppData = () => {
+  const [data, setData] = useState({
+    batches: [],
+    dispatches: [],
+    receipts: [],
+    incidents: [],
+    notifications: [],
+    analytics: { transporterScores: {} },
+    users: CONFIG.DEMO_USERS
+  });
 
-  if (view === 'timeline' && selectedBatch) {
-    const batch = data.batches.find(b => b.id === selectedBatch);
-    const dispatches = data.dispatches.filter(d => d.batchId === batch.id);
-    const receipts = data.receipts.filter(r => dispatches.some(d => d.id === r.dispatchId));
-    const incidents = data.incidents.filter(i => dispatches.some(d => d.id === i.dispatchId));
+  // Load data on mount
+  useEffect(() => {
+    const stored = StorageUtils.getItem(CONFIG.STORAGE_KEYS.APP_DATA);
+    if (stored) {
+      setData(prev => ({ ...prev, ...stored }));
+    }
+  }, []);
 
+  const save = useCallback((key, value) => {
+    setData(prev => {
+      const updated = { ...prev, [key]: value };
+      StorageUtils.setItem(CONFIG.STORAGE_KEYS.APP_DATA, updated);
+      return updated;
+    });
+  }, []);
+
+  const addNotification = useCallback((type, message, severity = 'info') => {
+    const notif = {
+      id: StringUtils.generateId('NOTIF'),
+      type,
+      message,
+      severity,
+      timestamp: new Date().toISOString(),
+      read: false
+    };
+    save('notifications', [notif, ...data.notifications].slice(0, 50));
+  }, [data.notifications, save]);
+
+  const updateAnalytics = useCallback(() => {
+    const scores = {};
+    data.dispatches.forEach(d => {
+      if (d.transporter) {
+        if (!scores[d.transporter]) scores[d.transporter] = { total: 0, incidents: 0 };
+        scores[d.transporter].total++;
+      }
+    });
+    data.incidents.forEach(inc => {
+      const d = data.dispatches.find(x => x.id === inc.dispatchId);
+      if (d?.transporter && scores[d.transporter]) scores[d.transporter].incidents++;
+    });
+    Object.keys(scores).forEach(t => {
+      scores[t].trustScore = scores[t].total > 0 ? Math.round(((scores[t].total - scores[t].incidents) / scores[t].total) * 100) : 100;
+    });
+    save('analytics', { ...data.analytics, transporterScores: scores });
+  }, [data, save]);
+
+  return { data, save, addNotification, updateAnalytics };
+};
+
+// ============ STRING UTILS ============
+const StringUtils = {
+  generateId: (prefix = '') => `${prefix}${Date.now()}`,
+  capitalize: (str) => str?.charAt(0).toUpperCase() + str?.slice(1).toLowerCase() || ''
+};
+
+// ============ STOREKEEPER VIEW ============
+const StorekeeperView = ({ data, save, user, addNotification }) => {
+  const [view, setView] = useState('home');
+  const [form, setForm] = useState({});
+  const [photos, setPhotos] = useState({});
+
+  const createBatch = () => {
+    if (!ValidationUtils.hasRequiredFields({ ...form, ...photos }, ['name', 'qty', 'doc', 'items'])) {
+      ErrorHandler.warn('Missing required fields for batch creation');
+      alert('❌ Missing required fields');
+      return;
+    }
+
+    const batch = {
+      id: StringUtils.generateId('BAT'),
+      productName: form.name,
+      quantity: parseInt(form.qty),
+      supplier: form.supplier || 'Unknown',
+      unitCost: parseFloat(form.cost || 0),
+      photos,
+      createdBy: user.name,
+      createdAt: new Date().toISOString(),
+      status: 'in_storage'
+    };
+
+    save('batches', [...data.batches, batch]);
+    addNotification('Batch Created', `${form.name} added to inventory`, 'info');
+    ErrorHandler.info(`Batch created: ${form.name}`);
+    alert('✅ Batch created successfully');
+    setView('home');
+    setForm({});
+    setPhotos({});
+  };
+
+  const prepareDispatch = (batch) => {
+    if (!ValidationUtils.hasRequiredFields({ ...form, ...photos }, ['qty', 'packed', 'sealed'])) {
+      ErrorHandler.warn('Missing required fields for dispatch');
+      alert('❌ Missing required fields');
+      return;
+    }
+
+    const dispatch = {
+      id: StringUtils.generateId('DSP'),
+      batchId: batch.id,
+      productName: batch.productName,
+      quantity: parseInt(form.qty),
+      photos,
+      preparedBy: user.name,
+      preparedAt: new Date().toISOString(),
+      status: 'pending_approval'
+    };
+
+    save('dispatches', [...data.dispatches, dispatch]);
+    save('batches', data.batches.map(b => b.id === batch.id ? { ...b, status: 'dispatch_prepared' } : b));
+    addNotification('Dispatch Prepared', `${batch.productName} ready for approval`, 'info');
+    ErrorHandler.info(`Dispatch prepared: ${batch.productName}`);
+    alert('✅ Dispatch prepared successfully');
+    setView('home');
+    setForm({});
+    setPhotos({});
+  };
+
+  if (view === 'intake') {
     return (
-      <div className="space-y-4">
-        <button onClick={() => setView('dashboard')} className="text-blue-600 font-semibold">← Back to Dashboard</button>
-        <h2 className="text-xl font-bold">{batch.productName}</h2>
-        <div className="bg-gray-50 p-3 rounded-lg">
-          <p className="text-sm text-gray-600">Batch ID: {batch.id}</p>
-          <p className="text-sm">Quantity: {batch.quantity} • Cost: P {(batch.quantity * batch.unitCost).toFixed(0)}</p>
+      <div className="space-y-4 animate-fadeIn">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-2xl font-bold">📦 New Intake</h2>
+          <button onClick={() => setView('home')} className="text-gray-500 hover:text-gray-700 text-2xl">×</button>
         </div>
-        <div className="space-y-3">
-          <div className="border-l-4 border-blue-500 pl-4 py-2">
-            <p className="font-semibold">Created</p>
-            <p className="text-sm text-gray-600">{new Date(batch.createdAt).toLocaleString()}</p>
-            <p className="text-sm">By: {batch.createdBy}</p>
-          </div>
-          {dispatches.map(d => (
-            <div key={d.id} className="space-y-2">
-              <div className="border-l-4 border-yellow-500 pl-4 py-2">
-                <p className="font-semibold">Dispatch Prepared</p>
-                <p className="text-sm text-gray-600">{new Date(d.preparedAt).toLocaleString()}</p>
-                <p className="text-sm">Qty: {d.quantity}</p>
-              </div>
-              {d.approvedAt && (
-                <div className="border-l-4 border-green-500 pl-4 py-2">
-                  <p className="font-semibold">Approved</p>
-                  <p className="text-sm text-gray-600">{new Date(d.approvedAt).toLocaleString()}</p>
-                  <p className="text-sm">Transporter: {d.transporter} • Driver: {d.driver}</p>
-                </div>
-              )}
-              {d.departedAt && (
-                <div className="border-l-4 border-purple-500 pl-4 py-2">
-                  <p className="font-semibold">Departed</p>
-                  <p className="text-sm text-gray-600">{new Date(d.departedAt).toLocaleString()}</p>
-                </div>
-              )}
-              {receipts.filter(r => r.dispatchId === d.id).map(r => (
-                <div key={r.id} className={`border-l-4 ${r.hasIncident ? 'border-red-500 bg-red-50' : 'border-green-500'} pl-4 py-2`}>
-                  <p className="font-semibold">Received {r.hasIncident && '(Incident)'}</p>
-                  <p className="text-sm text-gray-600">{new Date(r.receivedAt).toLocaleString()}</p>
-                  <p className="text-sm">Qty: {r.quantityReceived} • Condition: {r.condition}</p>
-                </div>
-              ))}
-              {incidents.filter(i => i.dispatchId === d.id).map(inc => (
-                <div key={inc.id} className="border-l-4 border-red-500 pl-4 py-2 bg-red-50">
-                  <p className="font-semibold text-red-800">Incident: {inc.type}</p>
-                  <p className="text-sm">Expected: {inc.quantityExpected} • Received: {inc.quantityReceived}</p>
-                  <p className="text-sm">Reason: {inc.reason}</p>
-                </div>
-              ))}
-            </div>
-          ))}
+        <PhotoCapture label="Supplier document" onCapture={(p) => setPhotos({...photos, doc: p})} />
+        <input type="text" placeholder="Product name *" className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" value={form.name || ''} onChange={(e) => setForm({...form, name: e.target.value})} />
+        <PhotoCapture label="Items photo" onCapture={(p) => setPhotos({...photos, items: p})} />
+        <div className="grid grid-cols-2 gap-3">
+          <input type="number" placeholder="Quantity *" className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" value={form.qty || ''} onChange={(e) => setForm({...form, qty: e.target.value})} />
+          <input type="number" placeholder="Unit Cost" step="0.01" className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" value={form.cost || ''} onChange={(e) => setForm({...form, cost: e.target.value})} />
         </div>
-        <button onClick={() => alert('PDF export would generate here')} className="w-full bg-blue-600 text-white p-3 rounded-lg flex items-center justify-center gap-2">
-          <Download className="w-5 h-5" />
-          Export PDF Timeline
-        </button>
+        <input type="text" placeholder="Supplier Name" className="w-full p-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 outline-none" value={form.supplier || ''} onChange={(e) => setForm({...form, supplier: e.target.value})} />
+        <div className="flex gap-3">
+          <button onClick={() => setView('home')} className="flex-1 bg-gray-200 hover:bg-gray-300 p-3 rounded-lg font-semibold transition">Cancel</button>
+          <button onClick={createBatch} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg font-semibold transition">Save Batch</button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-bold">Manager Dashboard</h2>
+    <div className="space-y-4 animate-fadeIn">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Storekeeper Dashboard</h2>
+        <TrustBadge score={user.trustScore} />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border-2 border-blue-200">
+          <Package className="w-8 h-8 text-blue-600 mb-2" />
+          <p className="text-2xl font-bold">{data.batches.filter(b => b.status === 'in_storage').length}</p>
+          <p className="text-xs text-gray-600">In Storage</p>
+        </div>
+        <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border-2 border-green-200">
+          <DollarSign className="w-8 h-8 text-green-600 mb-2" />
+          <p className="text-2xl font-bold">₱{ArrayUtils.sum(data.batches, 'quantity').toFixed(0)}</p>
+          <p className="text-xs text-gray-600">Total Value</p>
+        </div>
+      </div>
+      <button onClick={() => setView('intake')} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-lg flex items-center justify-between shadow-lg transition font-semibold">
+        <div className="flex items-center gap-3"><Package className="w-6 h-6" /><span>New Intake</span></div>
+        <ChevronRight className="w-5 h-5" />
+      </button>
+    </div>
+  );
+};
 
-      <div className="flex gap-2 border-b">
-        <button onClick={() => setTab('analytics')} className={`px-4 py-2 font-semibold ${tab === 'analytics' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>Analytics</button>
-        <button onClick={() => setTab('map')} className={`px-4 py-2 font-semibold ${tab === 'map' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>Live Map</button>
-        <button onClick={() => setTab('notifications')} className={`px-4 py-2 font-semibold ${tab === 'notifications' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600'}`}>
-          Notifications {data.notifications.filter(n => !n.read).length > 0 && <span className="ml-1 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{data.notifications.filter(n => !n.read).length}</span>}
-        </button>
+// ============ MANAGER VIEW ============
+const ManagerView = ({ data }) => {
+  const [tab, setTab] = useState('analytics');
+
+  const Tab = ({ id, label, badge, icon: Icon }) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`px-4 py-2 font-semibold flex items-center gap-2 transition ${
+        tab === id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+      {badge && <span className="ml-1 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{badge}</span>}
+    </button>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">Manager Dashboard</h2>
+        <TrustBadge score={100} />
+      </div>
+
+      <div className="flex gap-2 border-b overflow-x-auto pb-2">
+        <Tab id="analytics" label="Analytics" icon={BarChart3} />
+        <Tab id="map" label="Live Map" icon={Map} />
+        <Tab id="notifications" label="Alerts" badge={data.notifications.filter(n => !n.read).length} icon={Bell} />
       </div>
 
       {tab === 'analytics' && <AnalyticsDashboard data={data} />}
-      
       {tab === 'map' && <LiveMap dispatches={data.dispatches} />}
-
       {tab === 'notifications' && (
         <div className="space-y-3">
           {data.notifications.length === 0 ? (
@@ -534,73 +490,91 @@ const ManagerView = ({ data }) => {
                   <div>
                     <p className="font-semibold text-sm">{n.type}</p>
                     <p className="text-sm mt-1">{n.message}</p>
-                    <p className="text-xs text-gray-500 mt-1">{new Date(n.timestamp).toLocaleString()}</p>
+                    <p className="text-xs text-gray-500 mt-1">{DateUtils.format(n.timestamp, 'long')}</p>
                   </div>
-                  {!n.read && <div className="w-2 h-2 bg-blue-600 rounded-full" />}
+                  {!n.read && <div className="w-2 h-2 bg-red-600 rounded-full" />}
                 </div>
               </div>
             ))
           )}
         </div>
       )}
-
-      <div>
-        <h3 className="font-bold mb-3">Product Timelines</h3>
-        {data.batches.length === 0 ? (
-          <p className="text-gray-500 text-center py-8">No batches yet</p>
-        ) : (
-          data.batches.slice(-5).reverse().map(b => (
-            <div key={b.id} onClick={() => { setSelectedBatch(b.id); setView('timeline'); }} className="border p-3 rounded mb-2 cursor-pointer hover:bg-gray-50">
-              <p className="font-semibold">{b.productName}</p>
-              <p className="text-sm text-gray-600">{b.id} • Status: {b.status}</p>
-              <p className="text-xs text-blue-600 mt-1">View full timeline →</p>
-            </div>
-          ))
-        )}
-      </div>
     </div>
   );
 };
 
+// ============ MAIN APP ============
 const App = () => {
-  const { data, save, addNotification, updateAnalytics } = useStorage();
+  const { data, save, addNotification, updateAnalytics } = useAppData();
   const [user, setUser] = useState(null);
   const [pin, setPin] = useState('');
   const [gateApproved, setGateApproved] = useState(false);
   const [gateLoading, setGateLoading] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
 
-  // Run access gate once on mount
   useEffect(() => {
-    const approved = gatekeep();
-    setGateApproved(approved);
+    const emailVerified = AuthService.isEmailVerified();
+    if (emailVerified) {
+      const currentUser = AuthService.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+      }
+      setGateApproved(true);
+    } else {
+      setGateApproved(false);
+    }
     setGateLoading(false);
   }, []);
 
-  // Show blank while gate is processing
+  const handleLogin = () => {
+    if (!ValidationUtils.isValidPin(pin)) {
+      ErrorHandler.warn('Invalid PIN format');
+      alert('Invalid PIN format');
+      return;
+    }
+
+    const loggedInUser = AuthService.login(pin);
+    if (loggedInUser) {
+      setUser(loggedInUser);
+      setPin('');
+    } else {
+      ErrorHandler.warn('Login failed');
+      alert('Invalid PIN. Please try again.');
+    }
+  };
+
+  const handleLogout = () => {
+    AuthService.logout();
+    setUser(null);
+    setPin('');
+    ErrorHandler.info('User logged out');
+  };
+
   if (gateLoading) {
-    return <div className="min-h-screen bg-gray-50" />;
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <Activity className="w-12 h-12 text-blue-600 mx-auto mb-4 animate-spin" />
+          <p className="text-gray-600 font-semibold">Initializing Application...</p>
+        </div>
+      </div>
+    );
   }
 
-  // If gate not approved, show rejection screen
   if (!gateApproved) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-red-50 flex items-center justify-center p-4">
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
-          <div className="text-5xl mb-4">🔒</div>
-          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
-          <p className="text-gray-600 mb-6">{DENIED_MESSAGE}</p>
-          <button onClick={() => window.location.reload()} className="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold">
+          <Lock className="w-16 h-16 text-red-600 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Restricted</h1>
+          <p className="text-gray-600 mb-6">Your email has not been verified. Contact the administrator.</p>
+          <button onClick={() => window.location.reload()} className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg font-semibold transition">
             Try Again
           </button>
         </div>
       </div>
     );
   }
-
-  const login = () => {
-    const u = data.users.find(x => x.pin === pin);
-    if (u) { setUser(u); setPin(''); } else { alert('Invalid PIN'); }
-  };
 
   if (!user) {
     return (
@@ -614,336 +588,94 @@ const App = () => {
             <p className="text-gray-600 text-sm mt-2">Enterprise Custody Intelligence</p>
             <div className="flex items-center justify-center gap-2 mt-3">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-              <span className="text-xs text-gray-500">Live System</span>
+              <span className="text-xs text-gray-500">System Active</span>
             </div>
           </div>
 
-          <input 
-            type="password" 
-            placeholder="Enter PIN" 
-            maxLength="4" 
-            className="w-full p-4 border-2 border-gray-300 rounded-xl text-center text-3xl tracking-widest font-bold mb-4 focus:border-blue-500 focus:outline-none transition-colors" 
-            value={pin} 
-            onChange={(e) => setPin(e.target.value)} 
-            onKeyPress={(e) => e.key === 'Enter' && login()} 
+          <input
+            type="password"
+            placeholder="Enter PIN"
+            maxLength="4"
+            className="w-full p-4 border-2 border-gray-300 rounded-xl text-center text-3xl tracking-widest font-bold mb-4 focus:border-blue-500 focus:outline-none transition-colors"
+            value={pin}
+            onChange={(e) => setPin(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
           />
-          
-          <button onClick={login} className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 rounded-xl font-bold text-lg hover:shadow-lg transition-all">
+
+          <button onClick={handleLogin} className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-lg text-white p-4 rounded-xl font-bold text-lg transition">
             Login
           </button>
 
-          <div className="mt-8 p-4 bg-gray-50 rounded-xl">
-            <p className="font-bold text-sm mb-3 text-gray-700">Demo Access:</p>
+          <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <p className="font-bold text-sm mb-3 text-gray-700 flex items-center gap-2"><Users className="w-4 h-4" /> Demo Credentials:</p>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="bg-white p-2 rounded border">
-                <p className="font-semibold text-blue-600">Storekeeper</p>
-                <p className="text-gray-600 font-mono">PIN: 1111</p>
-              </div>
-              <div className="bg-white p-2 rounded border">
-                <p className="font-semibold text-purple-600">Dispatcher</p>
-                <p className="text-gray-600 font-mono">PIN: 2222</p>
-              </div>
-              <div className="bg-white p-2 rounded border">
-                <p className="font-semibold text-green-600">Driver</p>
-                <p className="text-gray-600 font-mono">PIN: 3333</p>
-              </div>
-              <div className="bg-white p-2 rounded border">
-                <p className="font-semibold text-orange-600">Receiver</p>
-                <p className="text-gray-600 font-mono">PIN: 4444</p>
-              </div>
+              {[
+                { role: 'Storekeeper', pin: '1111', color: 'blue' },
+                { role: 'Dispatcher', pin: '2222', color: 'purple' },
+                { role: 'Driver', pin: '3333', color: 'green' },
+                { role: 'Receiver', pin: '4444', color: 'orange' }
+              ].map(({ role, pin: p, color }) => (
+                <div key={p} className={`bg-${color}-50 border border-${color}-200 p-2 rounded`}>
+                  <p className={`font-semibold text-${color}-600`}>{role}</p>
+                  <p className="text-gray-600 font-mono">{p}</p>
+                </div>
+              ))}
             </div>
             <div className="bg-gradient-to-r from-yellow-400 to-orange-400 p-2 rounded border-2 border-yellow-500 mt-2">
-              <p className="font-bold text-gray-800">Manager</p>
-              <p className="text-gray-800 font-mono">PIN: 5555</p>
+              <p className="font-bold text-gray-800">👨‍💼 Manager</p>
+              <p className="text-gray-800 font-mono">5555</p>
             </div>
           </div>
 
-          <div className="mt-6 text-center text-xs text-gray-500">
+          <div className="mt-6 text-center text-xs text-gray-500 space-y-1">
             <p>Powered by BSTM Systems</p>
-            <p className="mt-1">All data stored locally</p>
-            <div className="flex items-center justify-center gap-4 mt-3">
-              <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-blue-600 hover:text-blue-700">
-                <Github className="w-4 h-4" />
-                <span>Deploy on GitHub</span>
-              </a>
-              <span>•</span>
-              <a href="https://vercel.com" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700">
-                Deploy on Vercel
-              </a>
-            </div>
+            <p>v{CONFIG.APP_VERSION}</p>
           </div>
         </div>
       </div>
     );
   }
 
-  const StorekeeperView = ({ data, save, user, addNotification }) => {
-    const [view, setView] = useState('home');
-    const [form, setForm] = useState({});
-    const [photos, setPhotos] = useState({});
-
-    const createBatch = () => {
-      if (!photos.doc || !photos.items || !form.name || !form.qty) { alert('❌ Missing fields'); return; }
-      const batch = { id: `BAT-${Date.now()}`, productName: form.name, quantity: parseInt(form.qty), supplier: form.supplier || 'Unknown', unitCost: parseFloat(form.cost || 0), photos, createdBy: user.name, createdAt: new Date().toISOString(), status: 'in_storage' };
-      save('batches', [...data.batches, batch]);
-      addNotification('Batch Created', `${form.name} added`, 'info');
-      alert('✅ Created');
-      setView('home'); setForm({}); setPhotos({});
-    };
-
-    const prepareDispatch = (batch) => {
-      if (!photos.packed || !photos.sealed || !form.qty) { alert('❌ Missing fields'); return; }
-      const dispatch = { id: `DSP-${Date.now()}`, batchId: batch.id, productName: batch.productName, quantity: parseInt(form.qty), photos, preparedBy: user.name, preparedAt: new Date().toISOString(), status: 'pending_approval' };
-      save('dispatches', [...data.dispatches, dispatch]);
-      save('batches', data.batches.map(b => b.id === batch.id ? { ...b, status: 'dispatch_prepared' } : b));
-      addNotification('Dispatch Prepared', `${batch.productName} ready`, 'info');
-      alert('✅ Prepared');
-      setView('home'); setForm({}); setPhotos({});
-    };
-
-    if (view === 'intake') {
-      return (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between"><h2 className="text-2xl font-bold">New Intake</h2><button onClick={() => setView('home')} className="text-2xl">×</button></div>
-          <RealCamera label="Supplier doc" onCapture={(p) => setPhotos({...photos, doc: p})} />
-          <input type="text" placeholder="Product name *" className="w-full p-3 border-2 rounded-lg" value={form.name || ''} onChange={(e) => setForm({...form, name: e.target.value})} />
-          <RealCamera label="Items" onCapture={(p) => setPhotos({...photos, items: p})} />
-          <div className="grid grid-cols-2 gap-3">
-            <input type="number" placeholder="Qty *" className="w-full p-3 border-2 rounded-lg" value={form.qty || ''} onChange={(e) => setForm({...form, qty: e.target.value})} />
-            <input type="number" placeholder="Cost" step="0.01" className="w-full p-3 border-2 rounded-lg" value={form.cost || ''} onChange={(e) => setForm({...form, cost: e.target.value})} />
-          </div>
-          <input type="text" placeholder="Supplier" className="w-full p-3 border-2 rounded-lg" value={form.supplier || ''} onChange={(e) => setForm({...form, supplier: e.target.value})} />
-          <div className="flex gap-3">
-            <button onClick={() => setView('home')} className="flex-1 bg-gray-200 p-3 rounded-lg">Cancel</button>
-            <button onClick={createBatch} className="flex-1 bg-blue-600 text-white p-3 rounded-lg">Save</button>
-          </div>
-        </div>
-      );
-    }
-
-    if (view === 'dispatch') {
-      const storage = data.batches.filter(b => b.status === 'in_storage');
-      if (form.batchId) {
-        const batch = data.batches.find(b => b.id === form.batchId);
-        return (
-          <div className="space-y-4">
-            <h2 className="text-2xl font-bold">Prepare Dispatch</h2>
-            <div className="bg-blue-50 p-4 rounded-lg border"><p className="font-bold">{batch.productName}</p><p className="text-sm">Available: {batch.quantity}</p></div>
-            <input type="number" placeholder="Qty *" max={batch.quantity} className="w-full p-3 border-2 rounded-lg" value={form.qty || ''} onChange={(e) => setForm({...form, qty: e.target.value})} />
-            <RealCamera label="Packed" onCapture={(p) => setPhotos({...photos, packed: p})} />
-            <RealCamera label="Sealed" onCapture={(p) => setPhotos({...photos, sealed: p})} />
-            <div className="flex gap-3">
-              <button onClick={() => setForm({})} className="flex-1 bg-gray-200 p-3 rounded-lg">Back</button>
-              <button onClick={() => prepareDispatch(batch)} className="flex-1 bg-green-600 text-white p-3 rounded-lg">Submit</button>
+  return (
+    <ErrorBoundary>
+      <div className="min-h-screen bg-gray-50">
+        <header className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 shadow-lg sticky top-0 z-50">
+          <div className="max-w-6xl mx-auto flex justify-between items-center">
+            <div>
+              <h1 className="text-xl font-bold flex items-center gap-2"><Home className="w-5 h-5" />FlowLedger-Ω</h1>
+              <p className="text-sm opacity-90">{user.name} • {StringUtils.capitalize(user.role)}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowSettings(!showSettings)} className="p-2 bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition">
+                <Settings className="w-5 h-5" />
+              </button>
+              <button onClick={handleLogout} className="p-2 bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition">
+                <LogOut className="w-5 h-5" />
+              </button>
             </div>
           </div>
-        );
-      }
-      return (
-        <div className="space-y-4">
-          <h2 className="text-2xl font-bold">Select Batch</h2>
-          {storage.map(b => <div key={b.id} onClick={() => setForm({batchId: b.id})} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{b.productName}</p><p className="text-sm text-gray-600">Qty: {b.quantity}</p></div>)}
-          <button onClick={() => setView('home')} className="w-full bg-gray-200 p-3 rounded-lg">Cancel</button>
-        </div>
-      );
-    }
+        </header>
 
-    return (
-      <div className="space-y-4">
-        <div><h2 className="text-2xl font-bold">Storekeeper</h2><TrustBadge score={user.trustScore} /></div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg border"><Package className="w-8 h-8 text-blue-600 mb-2" /><p className="text-2xl font-bold">{data.batches.filter(b => b.status === 'in_storage').length}</p></div>
-          <div className="bg-green-50 p-4 rounded-lg border"><DollarSign className="w-8 h-8 text-green-600 mb-2" /><p className="text-2xl font-bold">P {data.batches.reduce((s, b) => s + (b.quantity * b.unitCost), 0).toFixed(0)}</p></div>
-        </div>
-        <button onClick={() => setView('intake')} className="w-full bg-blue-600 text-white p-5 rounded-xl flex items-center justify-between shadow-lg"><div className="flex items-center gap-3"><Package className="w-6 h-6" /><span>New Intake</span></div><ChevronRight className="w-5 h-5" /></button>
-        <button onClick={() => setView('dispatch')} className="w-full bg-green-600 text-white p-5 rounded-xl flex items-center justify-between shadow-lg"><div className="flex items-center gap-3"><Truck className="w-6 h-6" /><span>Prepare Dispatch</span></div><ChevronRight className="w-5 h-5" /></button>
-        <div><h3 className="font-bold mb-2">Recent</h3>{data.batches.slice(-5).reverse().map(b => <div key={b.id} className="border p-3 rounded mb-2"><p className="font-semibold">{b.productName}</p><p className="text-xs text-gray-600">{b.id}</p></div>)}</div>
+        <main className="max-w-6xl mx-auto p-4 pb-20">
+          {user.role === 'storekeeper' && <StorekeeperView data={data} save={save} user={user} addNotification={addNotification} />}
+          {user.role === 'manager' && <ManagerView data={data} />}
+        </main>
+
+        <footer className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 shadow-lg">
+          <div className="max-w-6xl mx-auto flex justify-between items-center text-xs text-gray-600">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span>System Active</span>
+            </div>
+            <div className="flex gap-4 text-xs">
+              <span>📦 Batches: {data.batches.length}</span>
+              <span>🚚 Dispatches: {data.dispatches.length}</span>
+              <span>⚠️ Incidents: {data.incidents.length}</span>
+            </div>
+          </div>
+        </footer>
       </div>
-    );
-  };
-
-  const DispatcherView = ({ data, save, user, addNotification, updateAnalytics }) => {
-    const [sel, setSel] = useState(null);
-    const [form, setForm] = useState({});
-
-    const approve = () => {
-      if (!form.trans || !form.driver || !form.vehicle || !form.exp) { alert('❌ All required'); return; }
-      const updated = { ...sel, status: 'approved', transporter: form.trans, driver: form.driver, vehicle: form.vehicle, expectedDelivery: form.exp, approvedBy: user.name, approvedAt: new Date().toISOString() };
-      save('dispatches', data.dispatches.map(d => d.id === sel.id ? updated : d));
-      updateAnalytics();
-      addNotification('Approved', `${sel.productName} assigned`, 'info');
-      alert('✅ Approved');
-      setSel(null); setForm({});
-    };
-
-    const pending = data.dispatches.filter(d => d.status === 'pending_approval');
-
-    if (sel) {
-      return (
-        <div className="space-y-4">
-          <h2 className="text-2xl font-bold">Approve</h2>
-          <div className="bg-purple-50 p-4 rounded-lg border"><p className="font-bold">{sel.productName}</p><p className="text-sm">Qty: {sel.quantity}</p></div>
-          <input type="text" placeholder="Transporter *" className="w-full p-3 border-2 rounded-lg" value={form.trans || ''} onChange={(e) => setForm({...form, trans: e.target.value})} />
-          <input type="text" placeholder="Driver *" className="w-full p-3 border-2 rounded-lg" value={form.driver || ''} onChange={(e) => setForm({...form, driver: e.target.value})} />
-          <input type="text" placeholder="Vehicle *" className="w-full p-3 border-2 rounded-lg" value={form.vehicle || ''} onChange={(e) => setForm({...form, vehicle: e.target.value})} />
-          <input type="datetime-local" className="w-full p-3 border-2 rounded-lg" value={form.exp || ''} onChange={(e) => setForm({...form, exp: e.target.value})} />
-          <div className="flex gap-3">
-            <button onClick={() => setSel(null)} className="flex-1 bg-gray-200 p-3 rounded-lg">Cancel</button>
-            <button onClick={approve} className="flex-1 bg-green-600 text-white p-3 rounded-lg">Approve</button>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Dispatcher</h2>
-        <h3 className="font-semibold">Pending</h3>
-        {pending.length === 0 ? <p className="text-gray-500 text-center py-8">No pending</p> : pending.map(d => <div key={d.id} onClick={() => setSel(d)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-yellow-500"><p className="font-bold">{d.productName}</p><p className="text-sm text-gray-600">Qty: {d.quantity}</p></div>)}
-      </div>
-    );
-  };
-
-  const DriverView = ({ data, save, user, addNotification }) => {
-    const [sel, setSel] = useState(null);
-    const [photo, setPhoto] = useState(null);
-
-    const confirm = () => {
-      if (!photo) { alert('❌ Photo required'); return; }
-      const updated = { ...sel, status: 'in_transit', departurePhoto: photo, departedAt: new Date().toISOString() };
-      save('dispatches', data.dispatches.map(d => d.id === sel.id ? updated : d));
-      addNotification('Departed', `${sel.productName} in transit`, 'info');
-      alert('✅ Departed');
-      setSel(null); setPhoto(null);
-    };
-
-    const mine = data.dispatches.filter(d => d.status === 'approved' && d.driver === user.name);
-
-    if (sel) {
-      return (
-        <div className="space-y-4">
-          <h2 className="text-2xl font-bold">Confirm Departure</h2>
-          <div className="bg-blue-50 p-4 rounded-lg border"><p className="font-bold">{sel.id}</p><p className="text-sm">Vehicle: {sel.vehicle}</p></div>
-          <RealCamera label="Loaded vehicle" onCapture={setPhoto} />
-          <div className="flex gap-3">
-            <button onClick={() => setSel(null)} className="flex-1 bg-gray-200 p-3 rounded-lg">Cancel</button>
-            <button onClick={confirm} className="flex-1 bg-blue-600 text-white p-3 rounded-lg">Confirm</button>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Driver</h2>
-        <h3 className="font-semibold">My Deliveries</h3>
-        {mine.length === 0 ? <p className="text-gray-500 text-center py-8">No deliveries</p> : mine.map(d => <div key={d.id} onClick={() => setSel(d)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{d.id}</p><p className="text-sm text-gray-600">Vehicle: {d.vehicle}</p></div>)}
-      </div>
-    );
-  };
-
-  const ReceiverView = ({ data, save, user, addNotification }) => {
-    const [sel, setSel] = useState(null);
-    const [form, setForm] = useState({});
-    const [photos, setPhotos] = useState({});
-
-    const complete = () => {
-      if (!photos.received || !form.qty || !form.cond) { alert('❌ Missing fields'); return; }
-      const dispatch = data.dispatches.find(d => d.id === sel);
-      const mismatch = parseInt(form.qty) !== dispatch.quantity;
-      const damaged = form.cond === 'damaged';
-
-      if (mismatch || damaged) {
-        if (!photos.damage) { alert('❌ Damage photo required'); return; }
-        const incident = { id: `INC-${Date.now()}`, dispatchId: dispatch.id, type: damaged ? 'damage' : 'mismatch', quantityExpected: dispatch.quantity, quantityReceived: parseInt(form.qty), condition: form.cond, reason: form.reason || 'Unknown', photos, reportedBy: user.name, reportedAt: new Date().toISOString() };
-        save('incidents', [...data.incidents, incident]);
-        addNotification('Incident', `${dispatch.productName}: ${form.reason}`, 'critical');
-      }
-
-      const receipt = { id: `REC-${Date.now()}`, dispatchId: dispatch.id, quantityReceived: parseInt(form.qty), condition: form.cond, photos, receivedBy: user.name, receivedAt: new Date().toISOString(), hasIncident: mismatch || damaged };
-      save('receipts', [...data.receipts, receipt]);
-      save('dispatches', data.dispatches.map(d => d.id === dispatch.id ? { ...d, status: 'completed', custody: 'receiver' } : d));
-      alert(mismatch || damaged ? '⚠️ Receipt with incident' : '✅ Receipt complete');
-      setSel(null); setForm({}); setPhotos({});
-    };
-
-    const transit = data.dispatches.filter(d => d.status === 'in_transit');
-
-    if (sel) {
-      const dispatch = data.dispatches.find(d => d.id === sel);
-      return (
-        <div className="space-y-4">
-          <h2 className="text-2xl font-bold">Receive</h2>
-          <div className="bg-green-50 p-4 rounded-lg border"><p className="font-bold">{dispatch.id}</p><p className="text-sm">Expected: {dispatch.quantity}</p></div>
-          <RealCamera label="Items received" onCapture={(p) => setPhotos({...photos, received: p})} />
-          <input type="number" placeholder="Qty received *" className="w-full p-3 border-2 rounded-lg" value={form.qty || ''} onChange={(e) => setForm({...form, qty: e.target.value})} />
-          <select className="w-full p-3 border-2 rounded-lg" value={form.cond || ''} onChange={(e) => setForm({...form, cond: e.target.value})}>
-            <option value="">Condition *</option>
-            <option value="intact">Intact</option>
-            <option value="damaged">Damaged</option>
-          </select>
-          {(form.cond === 'damaged' || (form.qty && parseInt(form.qty) !== dispatch.quantity)) && (
-            <>
-              <RealCamera label="Damage evidence" onCapture={(p) => setPhotos({...photos, damage: p})} />
-              <select className="w-full p-3 border-2 rounded-lg" value={form.reason || ''} onChange={(e) => setForm({...form, reason: e.target.value})}>
-                <option value="">Reason *</option>
-                <option value="broken">Broken</option>
-                <option value="missing">Missing</option>
-                <option value="wet">Wet</option>
-              </select>
-            </>
-          )}
-          <div className="flex gap-3">
-            <button onClick={() => setSel(null)} className="flex-1 bg-gray-200 p-3 rounded-lg">Cancel</button>
-            <button onClick={complete} className="flex-1 bg-green-600 text-white p-3 rounded-lg">Submit</button>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Receiver</h2>
-        <h3 className="font-semibold">Incoming</h3>
-        {transit.length === 0 ? <p className="text-gray-500 text-center py-8">No incoming</p> : transit.map(d => <div key={d.id} onClick={() => setSel(d.id)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-green-500"><p className="font-bold">{d.id}</p><p className="text-sm text-gray-600">Expected: {d.quantity}</p></div>)}
-      </div>
-    );
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-4 shadow-lg">
-        <div className="max-w-2xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-xl font-bold">FlowLedger-Ω</h1>
-            <p className="text-sm opacity-90">{user.name} • {user.role}</p>
-          </div>
-          <button onClick={() => setUser(null)} className="p-2 bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition-all">
-            <LogOut className="w-5 h-5" />
-          </button>
-        </div>
-      </header>
-      <main className="max-w-2xl mx-auto p-4 pb-20">
-        {user.role === 'storekeeper' && <StorekeeperView data={data} save={save} user={user} addNotification={addNotification} />}
-        {user.role === 'dispatcher' && <DispatcherView data={data} save={save} user={user} addNotification={addNotification} updateAnalytics={updateAnalytics} />}
-        {user.role === 'driver' && <DriverView data={data} save={save} user={user} addNotification={addNotification} />}
-        {user.role === 'receiver' && <ReceiverView data={data} save={save} user={user} addNotification={addNotification} />}
-        {user.role === 'manager' && <ManagerView data={data} />}
-      </main>
-      <footer className="fixed bottom-0 left-0 right-0 bg-white border-t p-3 shadow-lg">
-        <div className="max-w-2xl mx-auto flex justify-between items-center text-xs text-gray-600">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span>Live System</span>
-          </div>
-          <div>
-            <span>Batches: {data.batches.length}</span>
-            <span className="mx-2">|</span>
-            <span>Incidents: {data.incidents.length}</span>
-          </div>
-        </div>
-      </footer>
-    </div>
+    </ErrorBoundary>
   );
 };
 
