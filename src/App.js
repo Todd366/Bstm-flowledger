@@ -1,7 +1,200 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Package, Truck, CheckCircle, AlertTriangle, LogOut, Download, Shield, ChevronRight, DollarSign, Map, TrendingUp, Bell, X } from 'lucide-react';
+import { Camera, Package, Truck, CheckCircle, AlertTriangle, LogOut, Download, Shield, ChevronRight, DollarSign, Map, TrendingUp, Bell, X, Github } from 'lucide-react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+
+// Access Gate Logic
+const KEYS = {
+  VERIFIED: 'flowledger_verified_email',
+  PENDING: 'flowledger_pending_requests',
+  LOGS: 'flowledger_access_logs'
+};
+
+const ADMIN_EMAILS = ['bstm366@gmail.com'];
+const APPROVED_EMAILS = ADMIN_EMAILS;
+const SECRET_MASTER_KEY = 'flowledger-omega-2026-myrah-78355551';
+
+const WELCOME_MESSAGE = `Welcome to FlowLedger.
+
+You have been approved.
+Keep this tab open if possible.
+Export data daily as backup.
+
+Contact Myrah if anything goes wrong:
+bstm366@gmail.com | +267 78 355 551`.trim();
+
+const DENIED_MESSAGE = `Access denied.
+
+Your email is not approved.
+Contact the administrator:
+bstm366@gmail.com | +267 78 355 551`.trim();
+
+const WRONG_KEY_MESSAGE = `Wrong master key.
+
+Access denied.`.trim();
+
+function logEvent(type, payload = {}) {
+  const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
+  logs.push({
+    timestamp: new Date().toISOString(),
+    type,
+    payload,
+    browser: navigator.userAgent || 'unknown',
+    platform: navigator.platform || 'unknown'
+  });
+  localStorage.setItem(KEYS.LOGS, JSON.stringify(logs.slice(-100)));
+  console.log('[AccessGate]', type, payload);
+}
+
+function getPendingRequests() {
+  return JSON.parse(localStorage.getItem(KEYS.PENDING) || '[]');
+}
+
+function savePendingRequests(arr) {
+  localStorage.setItem(KEYS.PENDING, JSON.stringify(arr));
+}
+
+function isAdmin(email) {
+  return APPROVED_EMAILS.includes(email.toLowerCase().trim());
+}
+
+function gatekeep() {
+  const verifiedEmail = localStorage.getItem(KEYS.VERIFIED);
+
+  if (verifiedEmail && APPROVED_EMAILS.includes(verifiedEmail)) {
+    logEvent('session_continued', { email: verifiedEmail });
+    return true;
+  }
+
+  const choice = prompt(`FlowLedger Access Gate
+
+1 = Request access (new user)
+2 = Approve / Revoke (admin only)
+
+Enter 1 or 2:`);
+
+  if (choice === null) return false;
+
+  const trimmedChoice = choice.trim();
+
+  if (trimmedChoice === '1') {
+    const emailInput = prompt('Enter your email address:');
+    if (emailInput === null) return false;
+
+    const email = emailInput.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      alert('Valid email required.');
+      return false;
+    }
+
+    let pending = getPendingRequests();
+    if (pending.some(p => p.email === email)) {
+      alert('Request already pending. Wait for approval.');
+    } else {
+      pending.push({ email, requestedAt: Date.now(), status: 'pending' });
+      savePendingRequests(pending);
+      alert('Request sent. Administrator will review shortly.');
+      logEvent('access_request', { email });
+    }
+    return false;
+  }
+
+  if (trimmedChoice === '2') {
+    const adminInput = prompt('Admin email:');
+    if (adminInput === null) return false;
+
+    const adminEmail = adminInput.trim().toLowerCase();
+    if (!isAdmin(adminEmail)) {
+      alert('Not an admin account.');
+      return false;
+    }
+
+    const keyInput = prompt('Enter master key:');
+    if (keyInput === null) return false;
+
+    if (keyInput !== SECRET_MASTER_KEY) {
+      alert(WRONG_KEY_MESSAGE);
+      logEvent('admin_wrong_key', { attemptedEmail: adminEmail });
+      return false;
+    }
+
+    const actionInput = prompt(`Admin Panel – ${adminEmail}
+
+1 = Approve pending request
+2 = Revoke existing user
+3 = View pending list
+4 = View logs
+
+Enter number:`);
+
+    if (actionInput === null) return false;
+
+    const action = actionInput.trim();
+
+    if (action === '1') {
+      const pending = getPendingRequests();
+      if (pending.length === 0) {
+        alert('No pending requests.');
+      } else {
+        const list = pending.map((p, i) => `${i+1}. ${p.email} (${new Date(p.requestedAt).toLocaleString()})`).join('\n');
+        const numInput = prompt(`Pending requests:\n${list}\n\nEnter number to approve:`);
+        if (numInput === null) return false;
+
+        const index = parseInt(numInput.trim()) - 1;
+        if (!isNaN(index) && pending[index]) {
+          const approvedEmail = pending[index].email;
+          localStorage.setItem(KEYS.VERIFIED, approvedEmail);
+          pending.splice(index, 1);
+          savePendingRequests(pending);
+          alert(`Approved: ${approvedEmail}\n\n${WELCOME_MESSAGE}`);
+          logEvent('admin_approved', { approvedEmail, admin: adminEmail });
+          return true;
+        } else {
+          alert('Invalid number selected.');
+          return false;
+        }
+      }
+    } else if (action === '2') {
+      const revokeInput = prompt('Email to revoke:');
+      if (revokeInput === null) return false;
+
+      const emailToRevoke = revokeInput.trim().toLowerCase();
+      if (localStorage.getItem(KEYS.VERIFIED) === emailToRevoke) {
+        localStorage.removeItem(KEYS.VERIFIED);
+        alert(`Revoked: ${emailToRevoke}`);
+        logEvent('admin_revoked', { revokedEmail: emailToRevoke, admin: adminEmail });
+        return false;
+      } else {
+        alert('Not currently logged in as that user.');
+        return false;
+      }
+    } else if (action === '3') {
+      const pending = getPendingRequests();
+      if (pending.length === 0) {
+        alert('No pending requests.');
+      } else {
+        const list = pending.map((p, i) => `${i+1}. ${p.email} (${new Date(p.requestedAt).toLocaleString()})`).join('\n');
+        alert(`Pending requests:\n${list}`);
+      }
+      return false;
+    } else if (action === '4') {
+      const logs = JSON.parse(localStorage.getItem(KEYS.LOGS) || '[]');
+      if (logs.length === 0) {
+        alert('No logs yet.');
+      } else {
+        const recent = logs.slice(-10).reverse().map(l => 
+          `[${l.timestamp}] ${l.type.toUpperCase()} – ${JSON.stringify(l.payload)}`
+        ).join('\n');
+        alert(`Last 10 logs:\n${recent}`);
+      }
+      return false;
+    }
+
+    return false;
+  }
+
+  return false;
+}
 
 const useStorage = () => {
   const [data, setData] = useState({
@@ -373,6 +566,36 @@ const App = () => {
   const { data, save, addNotification, updateAnalytics } = useStorage();
   const [user, setUser] = useState(null);
   const [pin, setPin] = useState('');
+  const [gateApproved, setGateApproved] = useState(false);
+  const [gateLoading, setGateLoading] = useState(true);
+
+  // Run access gate once on mount
+  useEffect(() => {
+    const approved = gatekeep();
+    setGateApproved(approved);
+    setGateLoading(false);
+  }, []);
+
+  // Show blank while gate is processing
+  if (gateLoading) {
+    return <div className="min-h-screen bg-gray-50" />;
+  }
+
+  // If gate not approved, show rejection screen
+  if (!gateApproved) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-red-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full text-center">
+          <div className="text-5xl mb-4">🔒</div>
+          <h1 className="text-2xl font-bold text-red-600 mb-2">Access Denied</h1>
+          <p className="text-gray-600 mb-6">{DENIED_MESSAGE}</p>
+          <button onClick={() => window.location.reload()} className="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold">
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const login = () => {
     const u = data.users.find(x => x.pin === pin);
@@ -461,7 +684,7 @@ const App = () => {
 
     const createBatch = () => {
       if (!photos.doc || !photos.items || !form.name || !form.qty) { alert('❌ Missing fields'); return; }
-      const batch = { id: `BAT-${Date.now()}`, productName: form.name, quantity: parseInt(form.qty), supplier: form.supplier || 'Unknown', unitCost: parseFloat(form.cost || 0), photos, createdBy: user.name, createdAt: new Date().toISOString(), status: 'in_storage', custody: 'company' };
+      const batch = { id: `BAT-${Date.now()}`, productName: form.name, quantity: parseInt(form.qty), supplier: form.supplier || 'Unknown', unitCost: parseFloat(form.cost || 0), photos, createdBy: user.name, createdAt: new Date().toISOString(), status: 'in_storage' };
       save('batches', [...data.batches, batch]);
       addNotification('Batch Created', `${form.name} added`, 'info');
       alert('✅ Created');
@@ -519,7 +742,7 @@ const App = () => {
       return (
         <div className="space-y-4">
           <h2 className="text-2xl font-bold">Select Batch</h2>
-          {storage.map(b => <div key={b.id} onClick={() => setForm({batchId: b.id})} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{b.productName}</p><p className="text-sm">Qty: {b.quantity}</p></div>)}
+          {storage.map(b => <div key={b.id} onClick={() => setForm({batchId: b.id})} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{b.productName}</p><p className="text-sm text-gray-600">Qty: {b.quantity}</p></div>)}
           <button onClick={() => setView('home')} className="w-full bg-gray-200 p-3 rounded-lg">Cancel</button>
         </div>
       );
@@ -529,12 +752,12 @@ const App = () => {
       <div className="space-y-4">
         <div><h2 className="text-2xl font-bold">Storekeeper</h2><TrustBadge score={user.trustScore} /></div>
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-blue-50 p-4 rounded-lg border"><Package className="w-8 h-8 text-blue-600 mb-2" /><p className="text-2xl font-bold">{data.batches.filter(b => b.status === 'in_storage').length}</p><p className="text-sm">In Storage</p></div>
-          <div className="bg-green-50 p-4 rounded-lg border"><DollarSign className="w-8 h-8 text-green-600 mb-2" /><p className="text-2xl font-bold">P {data.batches.reduce((s, b) => s + (b.quantity * b.unitCost), 0).toFixed(0)}</p><p className="text-sm">Value</p></div>
+          <div className="bg-blue-50 p-4 rounded-lg border"><Package className="w-8 h-8 text-blue-600 mb-2" /><p className="text-2xl font-bold">{data.batches.filter(b => b.status === 'in_storage').length}</p></div>
+          <div className="bg-green-50 p-4 rounded-lg border"><DollarSign className="w-8 h-8 text-green-600 mb-2" /><p className="text-2xl font-bold">P {data.batches.reduce((s, b) => s + (b.quantity * b.unitCost), 0).toFixed(0)}</p></div>
         </div>
-        <button onClick={() => setView('intake')} className="w-full bg-blue-600 text-white p-5 rounded-xl flex items-center justify-between shadow-lg"><div className="flex items-center gap-3"><Package className="w-6 h-6" /><span className="font-bold">New Intake</span></div><ChevronRight /></button>
-        <button onClick={() => setView('dispatch')} className="w-full bg-green-600 text-white p-5 rounded-xl flex items-center justify-between shadow-lg"><div className="flex items-center gap-3"><Truck className="w-6 h-6" /><span className="font-bold">Prepare Dispatch</span></div><ChevronRight /></button>
-        <div><h3 className="font-bold mb-2">Recent</h3>{data.batches.slice(-5).reverse().map(b => <div key={b.id} className="border p-3 rounded mb-2"><p className="font-semibold">{b.productName}</p><p className="text-sm text-gray-600">{b.id}</p></div>)}</div>
+        <button onClick={() => setView('intake')} className="w-full bg-blue-600 text-white p-5 rounded-xl flex items-center justify-between shadow-lg"><div className="flex items-center gap-3"><Package className="w-6 h-6" /><span>New Intake</span></div><ChevronRight className="w-5 h-5" /></button>
+        <button onClick={() => setView('dispatch')} className="w-full bg-green-600 text-white p-5 rounded-xl flex items-center justify-between shadow-lg"><div className="flex items-center gap-3"><Truck className="w-6 h-6" /><span>Prepare Dispatch</span></div><ChevronRight className="w-5 h-5" /></button>
+        <div><h3 className="font-bold mb-2">Recent</h3>{data.batches.slice(-5).reverse().map(b => <div key={b.id} className="border p-3 rounded mb-2"><p className="font-semibold">{b.productName}</p><p className="text-xs text-gray-600">{b.id}</p></div>)}</div>
       </div>
     );
   };
@@ -545,7 +768,7 @@ const App = () => {
 
     const approve = () => {
       if (!form.trans || !form.driver || !form.vehicle || !form.exp) { alert('❌ All required'); return; }
-      const updated = { ...sel, status: 'approved', transporter: form.trans, driver: form.driver, vehicle: form.vehicle, expectedDelivery: form.exp, approvedBy: user.name, approvedAt: new Date().toISOString(), custody: 'transporter' };
+      const updated = { ...sel, status: 'approved', transporter: form.trans, driver: form.driver, vehicle: form.vehicle, expectedDelivery: form.exp, approvedBy: user.name, approvedAt: new Date().toISOString() };
       save('dispatches', data.dispatches.map(d => d.id === sel.id ? updated : d));
       updateAnalytics();
       addNotification('Approved', `${sel.productName} assigned`, 'info');
@@ -576,7 +799,7 @@ const App = () => {
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">Dispatcher</h2>
         <h3 className="font-semibold">Pending</h3>
-        {pending.length === 0 ? <p className="text-gray-500 text-center py-8">No pending</p> : pending.map(d => <div key={d.id} onClick={() => setSel(d)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{d.productName}</p><p className="text-sm">Qty: {d.quantity}</p></div>)}
+        {pending.length === 0 ? <p className="text-gray-500 text-center py-8">No pending</p> : pending.map(d => <div key={d.id} onClick={() => setSel(d)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-yellow-500"><p className="font-bold">{d.productName}</p><p className="text-sm text-gray-600">Qty: {d.quantity}</p></div>)}
       </div>
     );
   };
@@ -614,7 +837,7 @@ const App = () => {
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">Driver</h2>
         <h3 className="font-semibold">My Deliveries</h3>
-        {mine.length === 0 ? <p className="text-gray-500 text-center py-8">No deliveries</p> : mine.map(d => <div key={d.id} onClick={() => setSel(d)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{d.id}</p><p className="text-sm">Vehicle: {d.vehicle}</p></div>)}
+        {mine.length === 0 ? <p className="text-gray-500 text-center py-8">No deliveries</p> : mine.map(d => <div key={d.id} onClick={() => setSel(d)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{d.id}</p><p className="text-sm text-gray-600">Vehicle: {d.vehicle}</p></div>)}
       </div>
     );
   };
@@ -632,7 +855,7 @@ const App = () => {
 
       if (mismatch || damaged) {
         if (!photos.damage) { alert('❌ Damage photo required'); return; }
-        const incident = { id: `INC-${Date.now()}`, dispatchId: dispatch.id, type: damaged ? 'damage' : 'mismatch', quantityExpected: dispatch.quantity, quantityReceived: parseInt(form.qty), condition: form.cond, reason: form.reason, photos, reportedBy: user.name, reportedAt: new Date().toISOString(), custodyAtIncident: dispatch.custody };
+        const incident = { id: `INC-${Date.now()}`, dispatchId: dispatch.id, type: damaged ? 'damage' : 'mismatch', quantityExpected: dispatch.quantity, quantityReceived: parseInt(form.qty), condition: form.cond, reason: form.reason || 'Unknown', photos, reportedBy: user.name, reportedAt: new Date().toISOString() };
         save('incidents', [...data.incidents, incident]);
         addNotification('Incident', `${dispatch.productName}: ${form.reason}`, 'critical');
       }
@@ -682,7 +905,7 @@ const App = () => {
       <div className="space-y-4">
         <h2 className="text-2xl font-bold">Receiver</h2>
         <h3 className="font-semibold">Incoming</h3>
-        {transit.length === 0 ? <p className="text-gray-500 text-center py-8">No incoming</p> : transit.map(d => <div key={d.id} onClick={() => setSel(d.id)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-blue-500"><p className="font-bold">{d.id}</p><p className="text-sm">Qty: {d.quantity}</p></div>)}
+        {transit.length === 0 ? <p className="text-gray-500 text-center py-8">No incoming</p> : transit.map(d => <div key={d.id} onClick={() => setSel(d.id)} className="border-2 p-4 rounded-lg cursor-pointer hover:border-green-500"><p className="font-bold">{d.id}</p><p className="text-sm text-gray-600">Expected: {d.quantity}</p></div>)}
       </div>
     );
   };
@@ -725,4 +948,3 @@ const App = () => {
 };
 
 export default App;
-
