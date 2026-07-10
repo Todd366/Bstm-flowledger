@@ -18,9 +18,8 @@ const useStorage = () => {
     ]
   });
 
-  const save = (key, valueOrUpdater) => {
+  const save = (key, value) => {
     setData(prev => {
-      const value = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev[key]) : valueOrUpdater;
       const updated = { ...prev, [key]: value };
       if (typeof window !== 'undefined') {
         try { localStorage.setItem('flowledger_data', JSON.stringify(updated)); } catch (e) {}
@@ -31,7 +30,7 @@ const useStorage = () => {
 
   const addNotification = (type, message, severity = 'info') => {
     const notif = { id: Date.now(), type, message, severity, timestamp: new Date().toISOString(), read: false };
-    save('notifications', prevNotifications => [notif, ...prevNotifications].slice(0, 50));
+    save('notifications', [notif, ...data.notifications].slice(0, 50));
   };
 
   useEffect(() => {
@@ -43,26 +42,25 @@ const useStorage = () => {
     }
   }, []);
 
-  const updateAnalytics = (dispatchesOverride) => {
-    const dispatches = dispatchesOverride || data.dispatches;
+  const updateAnalytics = () => {
     const scores = {};
-    dispatches.forEach(d => {
+    data.dispatches.forEach(d => {
       if (d.transporter) {
         if (!scores[d.transporter]) scores[d.transporter] = { total: 0, incidents: 0 };
         scores[d.transporter].total++;
       }
     });
     data.incidents.forEach(inc => {
-      const d = dispatches.find(x => x.id === inc.dispatchId);
+      const d = data.dispatches.find(x => x.id === inc.dispatchId);
       if (d?.transporter && scores[d.transporter]) scores[d.transporter].incidents++;
     });
     Object.keys(scores).forEach(t => {
       scores[t].trustScore = scores[t].total > 0 ? Math.round(((scores[t].total - scores[t].incidents) / scores[t].total) * 100) : 100;
     });
-    save('analytics', { ...data.analytics, transporterScores: scores });
-  };
+};
 
-  return { data, save, addNotification, updateAnalytics };
+  const color = score >= 95 ? 'text-green-600' : score >= 80 ? 'text-yellow-600' : 'text-red-600';
+  return <div className={`flex items-center gap-1 ${color} font-semibold text-sm`}><Shield className="w-4 h-4" /><span>{score}%</span></div>;
 };
 
 
@@ -434,9 +432,8 @@ const App = () => {
     const approve = () => {
       if (!form.trans || !form.driver || !form.vehicle || !form.exp) { alert('❌ All required'); return; }
       const updated = { ...sel, status: 'approved', transporter: form.trans, driver: form.driver, vehicle: form.vehicle, expectedDelivery: form.exp, approvedBy: user.name, approvedAt: new Date().toISOString(), custody: 'transporter' };
-      const updatedDispatches = data.dispatches.map(d => d.id === sel.id ? updated : d);
-      save('dispatches', updatedDispatches);
-      updateAnalytics(updatedDispatches);
+      save('dispatches', data.dispatches.map(d => d.id === sel.id ? updated : d));
+      updateAnalytics();
       addNotification('Approved', `${sel.productName} assigned`, 'info');
       alert('✅ Approved');
       setSel(null); setForm({});

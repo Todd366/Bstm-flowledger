@@ -4,8 +4,7 @@ import { Camera } from 'lucide-react';
 const PhotoCapture = ({ onCapture, label, required = true }) => {
   const [captured, setCaptured] = useState(null);
   const [isStarting, setIsStarting] = useState(false);
-  const [isReady, setIsReady] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // NEW: show user errors
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -34,7 +33,6 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
               });
           };
         });
-        setIsReady(true);
       }
     } catch (err) {
       console.error('Camera error:', err);
@@ -61,6 +59,7 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
     }
 
     const canvas = canvasRef.current;
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
@@ -78,9 +77,9 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
     };
 
     setCaptured(photo);
-    setIsReady(false);
     onCapture(photo);
 
+    // DELAYED STOP – critical for preview to show
     setTimeout(() => {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
@@ -89,7 +88,8 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
-    }, 1500);
+      console.log('[Camera] Stream stopped after delay');
+    }, 1500); // increased to 1.5s for slow devices
   };
 
   const stopCamera = () => {
@@ -100,18 +100,26 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-    setIsReady(false);
   };
 
-  const handleButtonClick = () => {
+  const handleCapture = () => {
     if (captured) {
       setCaptured(null);
       stopCamera();
       startCamera();
-    } else if (isReady) {
-      takePhoto();
     } else {
-      startCamera();
+      startCamera().then(() => {
+        setTimeout(() => {
+          if (videoRef.current?.srcObject && videoRef.current.videoWidth > 0) {
+            takePhoto();
+          } else {
+            // fallback retry
+            setTimeout(() => {
+              if (videoRef.current?.srcObject) takePhoto();
+            }, 1200);
+          }
+        }, 1500);
+      });
     }
   };
 
@@ -142,7 +150,10 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
             {new Date(captured.timestamp).toLocaleString()}
           </p>
           <button
-            onClick={handleButtonClick}
+            onClick={() => {
+              setCaptured(null);
+              startCamera();
+            }}
             className="w-full bg-red-600 hover:bg-red-700 text-white p-2 rounded transition-colors"
           >
             Take New Photo
@@ -169,12 +180,12 @@ const PhotoCapture = ({ onCapture, label, required = true }) => {
           <canvas ref={canvasRef} className="hidden" />
 
           <button
-            onClick={handleButtonClick}
-            disabled={isStarting || !!error}
+            onClick={handleCapture}
+            disabled={isStarting || !!streamRef.current || error}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white p-3 rounded font-semibold transition-colors disabled:opacity-50"
           >
             <Camera className="inline mr-2" size={18} />
-            {error ? 'Retry' : isStarting ? 'Starting...' : isReady ? 'Take Photo' : 'Start Camera'}
+            {error ? 'Retry' : isStarting ? 'Starting...' : streamRef.current ? 'Capturing...' : 'Capture Photo'}
           </button>
 
           {error && (
